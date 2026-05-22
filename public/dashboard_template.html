@@ -1,0 +1,1433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KK Design Intelligence</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f4f2ee;--surface:#fff;--surface2:#f8f7f4;--border:#e2ddd6;--border2:#ccc8c0;
+  --accent:#b5622a;--accentlt:#fdf0e8;--accent2:#4a6fa5;--accent3:#2a8a72;--accent4:#c0392b;
+  --text:#1a1814;--text2:#5c5750;--text3:#9c978e;
+  --sh:0 1px 4px rgba(0,0,0,.08),0 4px 16px rgba(0,0,0,.04);
+  --sh2:0 2px 8px rgba(0,0,0,.12);
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-height:100vh;}
+
+/* ─── UPLOAD SCREEN ─────────────────────────────────────────────── */
+#upload-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:24px;padding:40px;}
+.upload-box{background:#fff;border:2px dashed var(--border2);border-radius:16px;padding:60px 80px;text-align:center;cursor:pointer;transition:all .2s;max-width:560px;width:100%;}
+.upload-box:hover,.upload-box.drag{border-color:var(--accent);background:var(--accentlt);}
+.upload-icon{font-size:48px;margin-bottom:16px;}
+.upload-title{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;margin-bottom:8px;}
+.upload-sub{font-size:13px;color:var(--text2);line-height:1.6;}
+.upload-hint{font-size:11px;color:var(--text3);margin-top:12px;font-family:'IBM Plex Mono',monospace;}
+#file-input{display:none;}
+.upload-btn{display:inline-block;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:14px;font-family:'Syne',sans-serif;font-weight:700;cursor:pointer;margin-top:16px;transition:all .15s;}
+.upload-btn:hover{background:#9a4f22;}
+.col-guide{background:#fff;border:1px solid var(--border);border-radius:10px;padding:20px 28px;max-width:560px;width:100%;}
+.col-guide h3{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;}
+.col-list{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.col-pill{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text2);}
+#upload-err{color:var(--accent4);font-size:13px;display:none;}
+
+/* ─── HEADER ─────────────────────────────────────────────────────── */
+#app{display:none;}
+.header{background:#fff;border-bottom:1px solid var(--border);padding:14px 36px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 1px 6px rgba(0,0,0,.06);}
+.logo{font-family:'Syne',sans-serif;font-weight:800;font-size:18px;letter-spacing:-.5px;}
+.logo span{color:var(--accent);}
+.header-right{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.header-meta{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text3);line-height:1.8;}
+.header-meta b{color:var(--accent);}
+.btn{display:inline-flex;align-items:center;gap:5px;border:none;border-radius:7px;padding:7px 13px;font-size:12px;font-family:'Syne',sans-serif;font-weight:600;cursor:pointer;transition:all .15s;box-shadow:var(--sh);}
+.btn-primary{background:var(--accent);color:#fff;}.btn-primary:hover{background:#9a4f22;}
+.btn-outline{background:#fff;color:var(--accent);border:1.5px solid var(--accent);}.btn-outline:hover{background:var(--accentlt);}
+.btn-sm{padding:5px 10px;font-size:11px;}
+
+/* ─── NAV ────────────────────────────────────────────────────────── */
+.nav{background:#fff;border-bottom:1px solid var(--border);padding:0 36px;display:flex;overflow-x:auto;}
+.nav-tab{padding:12px 18px;font-size:13px;font-weight:500;cursor:pointer;border-bottom:3px solid transparent;color:var(--text2);transition:all .15s;white-space:nowrap;font-family:'Syne',sans-serif;}
+.nav-tab:hover{color:var(--text);background:#faf9f7;}
+.nav-tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:700;}
+
+/* ─── MAIN ───────────────────────────────────────────────────────── */
+main{padding:24px 36px;max-width:1600px;margin:0 auto;}
+.section{display:none;}.section.active{display:block;}
+
+/* ─── KPI ────────────────────────────────────────────────────────── */
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;}
+.kpi-card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:18px 20px;position:relative;overflow:hidden;box-shadow:var(--sh);}
+.kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--ac,var(--accent));}
+.kpi-label{font-size:10px;text-transform:uppercase;letter-spacing:1.5px;color:var(--text3);margin-bottom:6px;font-family:'IBM Plex Mono',monospace;}
+.kpi-value{font-family:'Syne',sans-serif;font-size:24px;font-weight:800;}
+.kpi-sub{font-size:11px;color:var(--text3);margin-top:4px;}
+
+/* ─── CARDS ──────────────────────────────────────────────────────── */
+.cards-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px;}
+.card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:20px;box-shadow:var(--sh);}
+.card-title{font-family:'Syne',sans-serif;font-size:12px;font-weight:700;color:var(--accent);margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px;}
+.bar-item{margin-bottom:9px;}
+.bar-label{display:flex;justify-content:space-between;margin-bottom:3px;font-size:12.5px;}
+.bar-name{color:var(--text);font-weight:500;}
+.bar-val{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text2);}
+.bar-track{background:#f0ede8;border-radius:3px;height:6px;overflow:hidden;}
+.bar-fill{height:100%;border-radius:3px;}
+
+/* ─── SEC HEADER ─────────────────────────────────────────────────── */
+.sec-hdr{margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px;}
+.sec-title{font-family:'Syne',sans-serif;font-size:17px;font-weight:700;}
+.sec-sub{font-size:12px;color:var(--text2);margin-top:2px;}
+.filter-row{display:flex;gap:9px;margin-bottom:14px;flex-wrap:wrap;align-items:center;}
+.filter-label{font-size:11px;color:var(--text3);font-family:'IBM Plex Mono',monospace;}
+select,input[type=text],input[type=date]{background:#fff;border:1px solid var(--border2);color:var(--text);padding:6px 10px;border-radius:7px;font-size:12.5px;cursor:pointer;font-family:'Inter',sans-serif;box-shadow:0 1px 3px rgba(0,0,0,.05);}
+select:focus,input:focus{outline:none;border-color:var(--accent);}
+.search-box{flex:1;max-width:240px;}
+
+/* ─── TABLES ─────────────────────────────────────────────────────── */
+.data-table{width:100%;border-collapse:collapse;font-size:12.5px;}
+.data-table th{padding:9px 12px;text-align:left;font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);border-bottom:2px solid var(--border);background:#faf9f7;white-space:nowrap;}
+.data-table td{padding:8px 12px;border-bottom:1px solid var(--border);}
+.data-table tr:hover td{background:#fdf9f6;}
+.num{font-family:'IBM Plex Mono',monospace;text-align:right;color:var(--text2);}
+.badge{display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-family:'IBM Plex Mono',monospace;font-weight:600;}
+.bg{background:#fef3e2;color:#b5622a;border:1px solid #f0d8b0;}
+.br{background:#fdeaea;color:#c0392b;border:1px solid #f0c0c0;}
+.bc{background:#e6f4f1;color:#2a8a72;border:1px solid #b0ddd4;}
+.bb{background:#e8eef7;color:#4a6fa5;border:1px solid #baccdf;}
+
+/* ─── TREND ──────────────────────────────────────────────────────── */
+.trend-chart{height:180px;width:100%;margin-top:4px;}
+.trend-svg{width:100%;height:100%;}
+
+/* ─── STYLE GROUPS ───────────────────────────────────────────────── */
+.sg{margin-bottom:8px;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:#fff;box-shadow:var(--sh);}
+.sg-hdr{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;cursor:pointer;transition:background .15s;border-left:4px solid var(--sg-color,#b5622a);}
+.sg-hdr:hover,.sg-hdr.open{background:#fdf9f6;}
+.sg-hdr.open{border-bottom:1px solid var(--border);}
+.sg-name{font-family:'Syne',sans-serif;font-weight:700;font-size:14px;}
+.sg-meta{font-size:11px;color:var(--text3);font-family:'IBM Plex Mono',monospace;margin-top:1px;}
+.sg-stat-lbl{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);font-family:'IBM Plex Mono',monospace;}
+.sg-stat-val{font-family:'Syne',sans-serif;font-weight:700;font-size:13px;}
+.chevron{font-size:12px;color:var(--text3);transition:transform .2s;margin-left:12px;}
+.sg-hdr.open .chevron{transform:rotate(180deg);}
+.sg-body{display:none;overflow-x:auto;}
+.sg-body.open{display:block;}
+.sg-inner-table{width:100%;border-collapse:collapse;}
+.sg-inner-table th{padding:7px 12px;text-align:left;font-family:'IBM Plex Mono',monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);background:#faf9f7;border-bottom:1px solid var(--border);white-space:nowrap;}
+.sg-inner-table td{padding:7px 12px;border-bottom:1px solid #f0ede8;font-size:12.5px;}
+.sg-inner-table tr:hover td{background:#fdf9f6;}
+.sg-inner-table tr:last-child td{border-bottom:none;}
+
+/* ─── CLUSTERS ───────────────────────────────────────────────────── */
+.cl-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.cl-card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px;box-shadow:var(--sh);transition:all .15s;}
+.cl-card:hover{box-shadow:var(--sh2);transform:translateY(-1px);}
+.hm-wrap{overflow-x:auto;}
+.hm-table{border-collapse:collapse;font-size:11px;font-family:'IBM Plex Mono',monospace;white-space:nowrap;}
+.hm-table th{padding:6px 10px;color:var(--text2);text-align:center;background:#faf9f7;font-weight:600;border:1px solid var(--border);}
+.hm-table td{padding:6px 10px;text-align:center;border:1px solid #e8e4de;}
+.hm-lbl{text-align:left !important;color:var(--text2);font-weight:500;background:#faf9f7 !important;}
+
+/* ─── INSIGHTS ───────────────────────────────────────────────────── */
+.ins-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px;}
+.ins-card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px;border-left:3px solid var(--ic,var(--accent));box-shadow:var(--sh);}
+.ins-icon{font-size:18px;margin-bottom:5px;}
+.ins-title{font-family:'Syne',sans-serif;font-size:12.5px;font-weight:700;margin-bottom:4px;}
+.ins-body{font-size:12px;color:var(--text2);line-height:1.65;}
+.ins-body strong{color:var(--text);}
+.card-wide{background:#fff;border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:16px;box-shadow:var(--sh);overflow-x:auto;}
+
+/* ─── DRILL DOWN ─────────────────────────────────────────────────── */
+#drill-panel{display:none;border:2px solid var(--accent);border-top:none;border-radius:0 0 10px 10px;background:#fff;overflow:hidden;}
+.drill-sc-card{background:#fff;border:1.5px solid #eee;border-radius:8px;padding:10px;cursor:pointer;transition:all .15s;border-top:3px solid #ccc;}
+.drill-sc-card:hover{background:#fdf9f6;transform:translateY(-2px);}
+
+/* ─── FREQ BADGE ─────────────────────────────────────────────────── */
+.freq-badge{display:inline-flex;align-items:center;gap:3px;background:#e8eef7;border:1px solid #baccdf;color:#4a6fa5;border-radius:4px;padding:1px 6px;font-size:10px;font-family:'IBM Plex Mono',monospace;font-weight:600;white-space:nowrap;}
+.freq-badge.high{background:#e6f4f1;border-color:#b0ddd4;color:#2a8a72;}
+.freq-badge.med{background:#fef3e2;border-color:#f0d8b0;color:#b5622a;}
+
+/* ─── DATE FILTER CHIP ───────────────────────────────────────────── */
+.date-chip{display:inline-flex;align-items:center;gap:6px;background:var(--accentlt);border:1px solid #f0d8b0;border-radius:6px;padding:4px 10px;font-size:11px;color:var(--accent);font-family:'IBM Plex Mono',monospace;}
+
+/* MISC */
+.rank-num{font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:13px;}
+.rg{color:#b5622a;}.rs{color:#7a9ab5;}.rb{color:#a07050;}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex-shrink:0;}
+.pill{display:inline-block;background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:3px 9px;font-size:11px;color:var(--text2);margin:2px;}
+.loading-overlay{display:none;position:fixed;inset:0;background:rgba(244,242,238,.85);z-index:200;align-items:center;justify-content:center;flex-direction:column;gap:16px;}
+.loading-overlay.show{display:flex;}
+.spinner{width:36px;height:36px;border:3px solid #e2ddd6;border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+@media(max-width:900px){.kpi-grid{grid-template-columns:1fr 1fr;}.cards-grid,.cl-grid,.ins-grid{grid-template-columns:1fr;}main,.header,.nav{padding-left:14px;padding-right:14px;}}
+</style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div class="loading-overlay" id="loading">
+  <div class="spinner"></div>
+  <div style="font-family:'Syne',sans-serif;font-weight:700;color:var(--text2)">Processing CSV…</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ UPLOAD SCREEN -->
+<div id="upload-screen">
+  <div style="text-align:center">
+    <div class="logo" style="font-size:26px;margin-bottom:6px"> <span>Design</span> Intelligence</div>
+    <div style="font-size:13px;color:var(--text3)">Dispatch Analytics Dashboard</div>
+  </div>
+
+  <div class="upload-box" id="drop-zone" onclick="document.getElementById('file-input').click()"
+       ondragover="ev.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')"
+       ondrop="ev.preventDefault();this.classList.remove('drag');handleFile(ev.dataTransfer.files[0])">
+    <div class="upload-icon">📦</div>
+    <div class="upload-title">Drop your dispatch CSV here</div>
+    <div class="upload-sub">or click to browse for the file</div>
+    <button class="upload-btn" onclick="event.stopPropagation();document.getElementById('file-input').click()">Choose CSV File</button>
+    <div class="upload-hint">CSV must have: Style Number · Sub Cut Style · Qty · Order Sent To · Price · Customer Dispatch Date</div>
+  </div>
+  <div id="upload-err"></div>
+
+  <div class="col-guide">
+    <h3>Required CSV Columns</h3>
+    <div class="col-list">
+      <span class="col-pill">Style Number</span>
+      <span class="col-pill">Sub Cut Style</span>
+      <span class="col-pill">Qty</span>
+      <span class="col-pill">Order Sent To</span>
+      <span class="col-pill">Price</span>
+      <span class="col-pill">Customer Dispatch Date</span>
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-top:10px">Column names are flexible — common variants are auto-detected. Date format: DD/MM/YYYY</div>
+  </div>
+</div>
+<input type="file" id="file-input" accept=".csv" onchange="handleFile(this.files[0])">
+
+<!-- ═══════════════════════════════════════════════════════════ APP -->
+<div id="app">
+<div class="header">
+  <div>
+    <div class="logo"> <span>Design</span> Intelligence</div>
+    <div id="hdr-sub" style="font-size:11px;color:var(--text3);margin-top:1px;font-family:'IBM Plex Mono',monospace"></div>
+  </div>
+  <div class="header-right">
+    <div class="header-meta" id="hdr-meta"></div>
+    <button class="btn btn-outline btn-sm" onclick="resetApp()">↩ Load New CSV</button>
+    <button class="btn btn-primary btn-sm" onclick="exportAllCSV()">⬇ Export All (CSV)</button>
+  </div>
+</div>
+
+<div class="nav">
+  <div class="nav-tab active" onclick="switchTab('overview',this)">📊 Overview</div>
+  <div class="nav-tab" onclick="switchTab('subcuts',this)">✂️ Sub Cuts</div>
+  <div class="nav-tab" onclick="switchTab('stylenumbers',this)">🔢 Style Numbers</div>
+  <div class="nav-tab" onclick="switchTab('customers',this)">🏪 Customers</div>
+  <div class="nav-tab" onclick="switchTab('clusters',this)">🧩 Clusters</div>
+  <div class="nav-tab" onclick="switchTab('insights',this)">💡 Insights</div>
+</div>
+
+<!-- ── GLOBAL FILTER BAR (affects every tab) ── -->
+<div id="global-filter-bar" style="background:#fff;border-bottom:2px solid var(--border);padding:10px 36px;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+  <span style="font-family:'Syne',sans-serif;font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px">📅 Filters</span>
+
+  <span class="filter-label">From:</span>
+  <input type="date" id="date-from" onchange="applyGlobalFilter()">
+  <span class="filter-label">To:</span>
+  <input type="date" id="date-to" onchange="applyGlobalFilter()">
+
+  <div style="width:1px;height:20px;background:var(--border);margin:0 4px"></div>
+
+  <button class="btn btn-outline btn-sm" onclick="setQuick('all')">All Time</button>
+  <button class="btn btn-outline btn-sm" onclick="setQuick('2024')">2024</button>
+  <button class="btn btn-outline btn-sm" onclick="setQuick('2025')">2025</button>
+  <button class="btn btn-outline btn-sm" onclick="setQuick('2026')">2026</button>
+  <button class="btn btn-outline btn-sm" onclick="setQuick('last6')">Last 6 Mo</button>
+  <button class="btn btn-outline btn-sm" onclick="setQuick('last3')">Last 3 Mo</button>
+
+  <div style="width:1px;height:20px;background:var(--border);margin:0 4px"></div>
+
+  <span class="filter-label">Min Qty:</span>
+  <input type="number" id="filter-min-qty" placeholder="e.g. 10" style="width:80px" onchange="applyGlobalFilter()">
+  <span class="filter-label">Max Qty:</span>
+  <input type="number" id="filter-max-qty" placeholder="e.g. 500" style="width:80px" onchange="applyGlobalFilter()">
+
+  <div style="width:1px;height:20px;background:var(--border);margin:0 4px"></div>
+
+  <span class="filter-label">Min MRP ₹:</span>
+  <input type="number" id="filter-min-price" placeholder="e.g. 5000" style="width:90px" onchange="applyGlobalFilter()">
+  <span class="filter-label">Max MRP ₹:</span>
+  <input type="number" id="filter-max-price" placeholder="e.g. 15000" style="width:90px" onchange="applyGlobalFilter()">
+
+  <div style="width:1px;height:20px;background:var(--border);margin:0 4px"></div>
+
+  <button class="btn btn-outline btn-sm" onclick="clearAllFilters()" style="color:var(--accent4);border-color:var(--accent4)">✕ Clear All</button>
+  <span id="global-filter-status" style="font-size:11px;color:var(--accent);font-family:'IBM Plex Mono',monospace;display:none"></span>
+</div>
+
+<main>
+
+<!-- OVERVIEW -->
+<div class="section active" id="tab-overview">
+  <div class="kpi-grid" id="kpi-grid"></div>
+  <div class="cards-grid">
+    <div class="card"><div class="card-title">📈 Monthly Dispatch Volume</div><div class="trend-chart"><svg class="trend-svg" id="trend-svg" viewBox="0 0 700 180" preserveAspectRatio="none"></svg></div></div>
+    <div class="card"><div class="card-title">🏆 Top Sub Cuts by Revenue</div><div id="ov-sc"></div></div>
+  </div>
+  <div class="cards-grid">
+    <div class="card"><div class="card-title">👑 Top Customers by Volume</div><div id="ov-cust"></div></div>
+    <div class="card"><div class="card-title">💰 Revenue / Unit by Sub Cut</div><div id="ov-rpu"></div></div>
+  </div>
+</div>
+
+<!-- SUB CUTS -->
+<div class="section" id="tab-subcuts">
+  <div class="sec-hdr">
+    <div><div class="sec-title">Sub Cut Style Analysis</div><div class="sec-sub">All sub cuts ranked by volume, revenue and reach</div></div>
+    <button class="btn btn-outline btn-sm" onclick="exportSubcutsCSV()">⬇ Export CSV</button>
+  </div>
+  <div class="filter-row">
+    <span class="filter-label">Sort:</span>
+    <select id="sc-sort" onchange="renderSubcuts()"><option value="qty">Units Sold</option><option value="revenue">Revenue</option><option value="customers">Reach</option><option value="rpu">Rev/Unit</option></select>
+    <select id="sc-limit" onchange="renderSubcuts()"><option value="15">Top 15</option><option value="999">All</option></select>
+  </div>
+  <div class="card-wide" style="padding:0">
+    <table class="data-table"><thead><tr><th>#</th><th>Sub Cut</th><th>Units</th><th>Revenue</th><th>Rev/Unit</th><th>Customers</th><th>All Variants</th><th>Status</th></tr></thead><tbody id="sc-tbody"></tbody></table>
+  </div>
+</div>
+
+<!-- STYLE NUMBERS -->
+<div class="section" id="tab-stylenumbers">
+  <div class="sec-hdr">
+    <div><div class="sec-title">Style Numbers — Grouped by Sub Cut</div><div class="sec-sub" id="sn-count-sub"></div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-outline btn-sm" onclick="exportStylesCSV()">⬇ Export CSV</button>
+      <button class="btn btn-outline btn-sm" onclick="expandAll()">Expand All</button>
+      <button class="btn btn-outline btn-sm" onclick="collapseAll()">Collapse All</button>
+    </div>
+  </div>
+  <div class="filter-row">
+    <span class="filter-label">Sub Cut:</span>
+    <select id="snfilter" onchange="filterSG()"><option value="">All</option></select>
+    <span class="filter-label">Sort by:</span>
+    <select id="snsort" onchange="renderSG()"><option value="qty">Units Sold</option><option value="revenue">Revenue</option><option value="customers">Customers</option></select>
+    <input type="text" class="search-box" id="snsearch" placeholder="Search style #…" oninput="filterSG()">
+  </div>
+  <div id="sg-container"></div>
+</div>
+
+<!-- CUSTOMERS -->
+<div class="section" id="tab-customers">
+  <div class="sec-hdr">
+    <div><div class="sec-title">Customer Deep Dive</div><div class="sec-sub">Click a row → sub cuts → style numbers with reorder frequency & global popularity</div></div>
+    <button class="btn btn-outline btn-sm" onclick="exportCustomersCSV()">⬇ Export CSV</button>
+  </div>
+
+  <div class="filter-row">
+    <span class="filter-label">Sort:</span>
+    <select id="cust-sort" onchange="renderCusts()"><option value="qty">Volume</option><option value="revenue">Revenue</option><option value="breadth">Breadth</option></select>
+    <input type="text" class="search-box" id="cust-search" placeholder="Search customer…" oninput="renderCusts()">
+    <span id="cust-count-label" style="font-size:11px;color:var(--text3);font-family:'IBM Plex Mono',monospace"></span>
+  </div>
+
+  <div class="card-wide" style="padding:0;margin-bottom:0;border-radius:10px 10px 0 0;border-bottom:none">
+    <table class="data-table"><thead><tr>
+      <th>#</th><th>Customer</th><th>Units</th><th>Revenue</th><th>Rev/Unit</th><th>Sub Cuts</th><th>Style Variants</th><th>Segment</th><th>Top Sub Cut</th>
+    </tr></thead><tbody id="cust-tbody"></tbody></table>
+  </div>
+
+  <!-- DRILL PANEL -->
+  <div id="drill-panel">
+    <div style="padding:12px 18px;background:#fdf9f6;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
+      <div>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Drill-Down ›</span>
+        <span id="drill-cust-name" style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;margin-left:8px;color:var(--accent)"></span>
+        <span id="drill-date-label" style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);margin-left:8px"></span>
+      </div>
+      <button onclick="closeDrill()" class="btn btn-outline btn-sm">✕ Close</button>
+    </div>
+    <div style="padding:14px 18px;border-bottom:1px solid var(--border)">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);font-family:'IBM Plex Mono',monospace;margin-bottom:10px">Top Sub Cut Styles — click to see style numbers</div>
+      <div id="drill-sc-cards" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px"></div>
+    </div>
+    <div id="drill-styles" style="display:none;padding:14px 18px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);display:flex;align-items:center;gap:10px">
+          Styles for <span id="drill-sc-label" style="color:var(--accent);font-weight:700"></span>
+          <span style="cursor:pointer;color:var(--text3);text-decoration:underline" onclick="document.getElementById('drill-styles').style.display='none'">← back</span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span class="filter-label">Show:</span>
+          <select id="drill-top-n" onchange="redrawStyleTable()" style="padding:4px 8px;font-size:12px">
+            <option value="10">Top 10</option>
+            <option value="15">Top 15</option>
+            <option value="20">Top 20</option>
+            <option value="999">All (up to 25)</option>
+          </select>
+          <span class="filter-label">Sort by:</span>
+          <select id="drill-sort" onchange="redrawStyleTable()" style="padding:4px 8px;font-size:12px">
+            <option value="qty">Units Sold</option>
+            <option value="freq">Reorder Frequency</option>
+            <option value="rev">Revenue</option>
+          </select>
+        </div>
+      </div>
+      <div id="drill-style-table"></div>
+    </div>
+  </div>
+</div>
+
+<!-- CLUSTERS (auto-generated from top customers) -->
+<div class="section" id="tab-clusters">
+  <div class="sec-hdr"><div><div class="sec-title">Customer Buying Clusters</div><div class="sec-sub">Grouped by buying behavior — auto-generated from your data</div></div></div>
+  <div class="cl-grid" id="cl-grid"></div>
+  <div class="card-wide" style="margin-top:14px">
+    <div class="card-title" style="margin-bottom:12px">Sub Cut Penetration Heatmap</div>
+    <div class="hm-wrap"><div id="hm-container"></div></div>
+  </div>
+</div>
+
+<!-- INSIGHTS -->
+<div class="section" id="tab-insights">
+  <div class="sec-hdr">
+    <div><div class="sec-title">Business Intelligence & Action Points</div><div class="sec-sub">~20 AI-generated insights from your actual data</div></div>
+    <button class="btn btn-primary" id="ai-gen-btn" onclick="generateAIInsights()">✨ Generate AI Insights</button>
+  </div>
+
+  <!-- API Key setup (shown only if no key saved) -->
+  <div id="api-key-setup" style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:16px 20px;margin-bottom:16px;box-shadow:var(--sh)">
+    <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:13px;margin-bottom:8px">🔑 Anthropic API Key <span style="font-weight:400;color:var(--text3);font-size:12px">— needed for AI insights</span></div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input type="password" id="api-key-input" placeholder="sk-ant-api03-..." style="flex:1;max-width:420px;font-family:'IBM Plex Mono',monospace;font-size:12px">
+      <button class="btn btn-primary btn-sm" onclick="saveApiKey()">Save Key</button>
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('api-key-setup').style.display='none'">Hide</button>
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-top:8px">Get your key at <strong>console.anthropic.com</strong> → API Keys. First $5 is free. Each insights generation costs ~$0.01.</div>
+  </div>
+
+  <!-- Static quick insights -->
+  <div class="ins-grid" id="ins-grid" style="margin-bottom:16px"></div>
+
+  <!-- AI output panel -->
+  <div class="card-wide" id="ai-panel" style="display:none">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:13px;color:var(--accent)">✨ Claude AI — Business Insights</div>
+      <button class="btn btn-outline btn-sm" onclick="generateAIInsights()">↻ Regenerate</button>
+    </div>
+    <div id="ai-loading" style="display:none;color:var(--text3);font-size:13px;padding:12px 0">Analysing your data…</div>
+    <div id="ai-content" style="font-size:13px;line-height:1.9;color:var(--text2)"></div>
+  </div>
+
+  <div class="card-wide">
+    <div class="card-title" style="margin-bottom:12px">🎯 Cross-Sell Opportunities</div>
+    <table class="data-table"><thead><tr><th>Customer</th><th>Buys</th><th>Missing High-Sellers</th><th>Potential</th></tr></thead><tbody id="cs-tbody"></tbody></table>
+  </div>
+</div>
+
+</main>
+</div><!-- /app -->
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// GLOBAL STATE
+// ══════════════════════════════════════════════════════════════
+let D = null;            // full processed data
+let FILTERED_RAW = [];   // date-filtered raw rows
+let DATE_FROM = null;
+let DATE_TO   = null;
+let activeCustRow = null;
+let FILTER_MIN_QTY = 0, FILTER_MAX_QTY = Infinity;
+let FILTER_MIN_PRICE = 0, FILTER_MAX_PRICE = Infinity;
+let _FA = null;          // cached filteredAnalytics result
+let _globalStyleMap = null;
+let _curSC = null, _curSCData = null;
+
+const PALETTE = ["#b5622a","#4a6fa5","#2a8a72","#7a5195","#ef6c2c","#c0392b","#2a7a8a","#8a4a2a","#1a7a4a","#9a4a6a","#3a6a7a","#c0692a","#6a3d9a","#4a7a4a","#7a4a9a","#6a6a2a"];
+const SC_COLORS = {};
+
+// ══════════════════════════════════════════════════════════════
+// CSV PARSING (browser-side)
+// ══════════════════════════════════════════════════════════════
+function handleFile(file) {
+  if (!file) return;
+  if (!file.name.endsWith('.csv')) return showErr('Please select a .csv file');
+  showLoading(true);
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = parseCSV(e.target.result);
+      D = data;
+      FILTERED_RAW = [...D.raw];
+      initDashboard();
+    } catch(err) {
+      showLoading(false);
+      showErr('Error: ' + err.message);
+    }
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+function parseCSV(text) {
+  // Remove BOM
+  text = text.replace(/^\uFEFF/, '');
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) throw new Error('CSV has no data rows');
+
+  // Parse header
+  const headers = parseLine(lines[0]).map(h => h.trim().toLowerCase());
+
+  // Column detection
+  const colMap = {};
+  const needed = {
+    style: ['style number','style_number','style no','style'],
+    subcut:['sub cut style','sub_cut_style','subcut','cut style','sub cut'],
+    qty:   ['qty','quantity','units'],
+    cust:  ['order sent to','customer','order_sent_to','party'],
+    price: ['price','mrp','rate'],
+    date:  ['customer dispatch date','dispatch date','date','dispatch_date'],
+  };
+  for (const [key, candidates] of Object.entries(needed)) {
+    for (const c of candidates) {
+      if (headers.includes(c)) { colMap[key] = headers.indexOf(c); break; }
+    }
+    if (colMap[key] === undefined) throw new Error(`Cannot find column for "${key}". Found: ${headers.join(', ')}`);
+  }
+
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cells = parseLine(lines[i]);
+    if (cells.length < 3) continue;
+    const qty = parseInt(cells[colMap.qty]) || 0;
+    if (qty === 0) continue;
+    const price = parsePrice(cells[colMap.price]);
+    const date  = (cells[colMap.date] || '').trim();
+    rows.push({
+      c:  (cells[colMap.cust]  || '').trim(),
+      sc: (cells[colMap.subcut]|| '').trim(),
+      sn: (cells[colMap.style] || '').trim(),
+      q:  qty,
+      p:  price,
+      d:  date,
+      dt: parseDate(date),
+    });
+  }
+  if (!rows.length) throw new Error('No valid data rows found');
+  return buildAnalytics(rows);
+}
+
+function parseLine(line) {
+  const cells = [];
+  let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === '"') { inQ = !inQ; continue; }
+    if (line[i] === ',' && !inQ) { cells.push(cur); cur = ''; continue; }
+    cur += line[i];
+  }
+  cells.push(cur);
+  return cells;
+}
+
+function parsePrice(p) {
+  const m = String(p || '').replace(',','').match(/\d+(\.\d+)?/);
+  return m ? parseFloat(m[0]) : 0;
+}
+
+function parseDate(d) {
+  d = String(d || '').trim();
+  const fmts = [
+    [/^(\d{2})\/(\d{2})\/(\d{4})$/, (a) => new Date(+a[3],+a[2]-1,+a[1])],
+    [/^(\d{4})-(\d{2})-(\d{2})$/,   (a) => new Date(+a[1],+a[2]-1,+a[3])],
+    [/^(\d{2})-(\d{2})-(\d{4})$/,   (a) => new Date(+a[3],+a[2]-1,+a[1])],
+    [/^(\d{2})\/(\d{2})\/(\d{2})$/,  (a) => new Date(+('20'+a[3]),+a[2]-1,+a[1])],
+  ];
+  for (const [re, fn] of fmts) {
+    const m = d.match(re);
+    if (m) { const dt = fn(m); return isNaN(dt) ? null : dt; }
+  }
+  return null;
+}
+
+// ══════════════════════════════════════════════════════════════
+// ANALYTICS BUILDER (runs on parsed rows)
+// ══════════════════════════════════════════════════════════════
+function buildAnalytics(rows) {
+  const scAcc    = {};
+  const custAcc  = {};
+  const styleAcc = {};
+  const monthAcc = {};
+  const drillAcc = {};
+  let totalQty = 0, totalRev = 0;
+  const allDates = [];
+
+  for (const r of rows) {
+    if (!r.c || !r.sc || !r.sn) continue;
+    const rev = r.q * r.p;
+    totalQty += r.q;
+    totalRev += rev;
+    if (r.dt) allDates.push(r.dt);
+
+    // Sub cut
+    if (!scAcc[r.sc]) scAcc[r.sc] = {qty:0,rev:0,custs:new Set(),styles:new Set()};
+    scAcc[r.sc].qty += r.q; scAcc[r.sc].rev += rev;
+    scAcc[r.sc].custs.add(r.c); scAcc[r.sc].styles.add(r.sn);
+
+    // Customer
+    if (!custAcc[r.c]) custAcc[r.c] = {qty:0,rev:0,scs:new Set(),styles:new Set()};
+    custAcc[r.c].qty += r.q; custAcc[r.c].rev += rev;
+    custAcc[r.c].scs.add(r.sc); custAcc[r.c].styles.add(r.sn);
+
+    // Style
+    if (!styleAcc[r.sn]) styleAcc[r.sn] = {qty:0,rev:0,sc:r.sc,price:0,custs:new Set(),dates:new Set()};
+    styleAcc[r.sn].qty += r.q; styleAcc[r.sn].rev += rev;
+    if (r.p > 0) styleAcc[r.sn].price = r.p;
+    styleAcc[r.sn].custs.add(r.c); styleAcc[r.sn].dates.add(r.d);
+
+    // Monthly
+    if (r.dt) {
+      const mk = `${r.dt.getFullYear()}-${String(r.dt.getMonth()+1).padStart(2,'0')}`;
+      monthAcc[mk] = (monthAcc[mk] || 0) + r.q;
+    }
+
+    // Drill
+    if (!drillAcc[r.c]) drillAcc[r.c] = {};
+    if (!drillAcc[r.c][r.sc]) drillAcc[r.c][r.sc] = {};
+    if (!drillAcc[r.c][r.sc][r.sn]) drillAcc[r.c][r.sc][r.sn] = {qty:0,rev:0,price:0,dates:new Set()};
+    const ds = drillAcc[r.c][r.sc][r.sn];
+    ds.qty += r.q; ds.rev += rev;
+    if (r.p > 0) ds.price = r.p;
+    if (r.d) ds.dates.add(r.d);
+  }
+
+  // Serialise
+  const subcuts = Object.entries(scAcc)
+    .filter(([sc]) => sc)
+    .map(([sc, v]) => ({name:sc, qty:v.qty, revenue:Math.round(v.rev), customers:v.custs.size, styles:v.styles.size}))
+    .sort((a,b) => b.qty - a.qty);
+
+  const customers = Object.entries(custAcc)
+    .filter(([c]) => c)
+    .map(([c, v]) => ({name:c, qty:v.qty, revenue:Math.round(v.rev), sc:[...v.scs], vc:v.styles.size}))
+    .sort((a,b) => b.qty - a.qty);
+
+  // Style groups (qty > 10)
+  const sgRaw = {};
+  for (const [sn, v] of Object.entries(styleAcc)) {
+    if (v.qty > 10 && v.sc) {
+      if (!sgRaw[v.sc]) sgRaw[v.sc] = [];
+      sgRaw[v.sc].push({n:sn, qty:v.qty, rev:Math.round(v.rev), price:Math.round(v.price), cust:v.custs.size});
+    }
+  }
+  const styleGroups = Object.entries(sgRaw)
+    .map(([sc, styles]) => ({sc, tq: styles.reduce((s,x)=>s+x.qty,0), s: styles.sort((a,b)=>b.qty-a.qty)}))
+    .sort((a,b) => b.tq - a.tq);
+
+  const MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const monthly = Object.entries(monthAcc)
+    .sort(([a],[b]) => a < b ? -1 : 1)
+    .map(([k,q]) => { const [y,mo]=k.split('-'); return {m:`${MN[+mo-1]} ${y.slice(2)}`, q}; });
+
+  // Drill JSON (top 10 SCs, top 25 styles each with freq)
+  const drill = {};
+  for (const [cust, scObj] of Object.entries(drillAcc)) {
+    const scTotals = Object.entries(scObj).filter(([sc])=>sc).map(([sc,st])=>({sc,qty:Object.values(st).reduce((s,v)=>s+v.qty,0)})).sort((a,b)=>b.qty-a.qty).slice(0,10);
+    drill[cust] = {};
+    for (const {sc, qty} of scTotals) {
+      const styles = Object.entries(scObj[sc]).sort((a,b)=>b[1].qty-a[1].qty).slice(0,25);
+      drill[cust][sc] = {
+        qty,
+        rev: Math.round(Object.values(scObj[sc]).reduce((s,v)=>s+v.rev,0)),
+        styles: styles.map(([sn,v])=>({n:sn, qty:v.qty, rev:Math.round(v.rev), price:Math.round(v.price), freq:v.dates.size}))
+      };
+    }
+  }
+
+  // Date range
+  let dateRange = '';
+  if (allDates.length) {
+    const mn = new Date(Math.min(...allDates)), mx = new Date(Math.max(...allDates));
+    dateRange = `${MN[mn.getMonth()]} ${mn.getFullYear()} – ${MN[mx.getMonth()]} ${mx.getFullYear()}`;
+    // Set default date inputs
+    setTimeout(() => {
+      document.getElementById('date-from').min = mn.toISOString().slice(0,10);
+      document.getElementById('date-from').max = mx.toISOString().slice(0,10);
+      document.getElementById('date-to').min   = mn.toISOString().slice(0,10);
+      document.getElementById('date-to').max   = mx.toISOString().slice(0,10);
+    }, 50);
+  }
+
+  return {
+    total_qty: totalQty, total_rev: Math.round(totalRev),
+    total_rows: rows.length, date_range: dateRange,
+    subcuts, customers, style_groups: styleGroups, monthly, drill,
+    raw: rows
+  };
+}
+
+// ══════════════════════════════════════════════════════════════
+// DATE FILTER
+// ══════════════════════════════════════════════════════════════
+function applyDateFilter() {
+  const f = document.getElementById('date-from').value;
+  const t = document.getElementById('date-to').value;
+  DATE_FROM = f || null;
+  DATE_TO   = t || null;
+
+  if (DATE_FROM || DATE_TO) {
+    FILTERED_RAW = D.raw.filter(r => {
+      // dt can be a JS Date object (browser CSV upload) or a YYYY-MM-DD string (Python-generated)
+      if (!r.dt) return false;
+      const rds = (r.dt instanceof Date)
+        ? `${r.dt.getFullYear()}-${String(r.dt.getMonth()+1).padStart(2,'0')}-${String(r.dt.getDate()).padStart(2,'0')}`
+        : String(r.dt).slice(0, 10);
+      if (DATE_FROM && rds < DATE_FROM) return false;
+      if (DATE_TO   && rds > DATE_TO)   return false;
+      return true;
+    });
+    const chip = document.getElementById('active-filter-chip');
+    if (chip) {
+      chip.style.display = 'inline-flex';
+      chip.className = 'date-chip';
+      chip.textContent = `📅 ${f||'start'} → ${t||'end'}  (${FILTERED_RAW.length.toLocaleString()} rows)`;
+    }
+  } else {
+    FILTERED_RAW = [...D.raw];
+    const chip = document.getElementById('active-filter-chip');
+    if (chip) chip.style.display = 'none';
+  }
+  renderCusts();
+  closeDrill();
+}
+
+function setQuick(period) {
+  const now = new Date();
+  let f = '', t = '';
+  if (period === 'all') { document.getElementById('date-from').value=''; document.getElementById('date-to').value=''; }
+  else if (period === '2024') { f='2024-01-01'; t='2024-12-31'; }
+  else if (period === '2025') { f='2025-01-01'; t='2025-12-31'; }
+  else if (period === '2026') { f='2026-01-01'; t='2026-12-31'; }
+  else if (period === 'last6') {
+    const d = new Date(); d.setMonth(d.getMonth()-6);
+    f = d.toISOString().slice(0,10); t = now.toISOString().slice(0,10);
+  } else if (period === 'last3') {
+    const d = new Date(); d.setMonth(d.getMonth()-3);
+    f = d.toISOString().slice(0,10); t = now.toISOString().slice(0,10);
+  }
+  if (period !== 'all') {
+    document.getElementById('date-from').value = f;
+    document.getElementById('date-to').value   = t;
+  }
+  applyDateFilter();
+}
+
+// ══════════════════════════════════════════════════════════════
+// GLOBAL FILTER ENGINE
+// ══════════════════════════════════════════════════════════════
+function rowDateStr(r) {
+  if (!r.dt) return null;
+  if (r.dt instanceof Date) {
+    return `${r.dt.getFullYear()}-${String(r.dt.getMonth()+1).padStart(2,'0')}-${String(r.dt.getDate()).padStart(2,'0')}`;
+  }
+  return String(r.dt).slice(0,10);
+}
+
+function applyGlobalFilter() {
+  const f = document.getElementById('date-from').value;
+  const t = document.getElementById('date-to').value;
+  DATE_FROM = f||null; DATE_TO = t||null;
+  FILTER_MIN_QTY   = parseFloat(document.getElementById('filter-min-qty').value)   || 0;
+  FILTER_MAX_QTY   = parseFloat(document.getElementById('filter-max-qty').value)   || Infinity;
+  FILTER_MIN_PRICE = parseFloat(document.getElementById('filter-min-price').value) || 0;
+  FILTER_MAX_PRICE = parseFloat(document.getElementById('filter-max-price').value) || Infinity;
+
+  const active = DATE_FROM||DATE_TO||FILTER_MIN_QTY||FILTER_MAX_QTY<Infinity||FILTER_MIN_PRICE||FILTER_MAX_PRICE<Infinity;
+  FILTERED_RAW = active ? D.raw.filter(r => {
+    if (DATE_FROM||DATE_TO) {
+      const ds = rowDateStr(r); if (!ds) return false;
+      if (DATE_FROM && ds < DATE_FROM) return false;
+      if (DATE_TO   && ds > DATE_TO)   return false;
+    }
+    if (r.q < FILTER_MIN_QTY || r.q > FILTER_MAX_QTY) return false;
+    if (r.p && (r.p < FILTER_MIN_PRICE || r.p > FILTER_MAX_PRICE)) return false;
+    return true;
+  }) : [...D.raw];
+
+  _FA = null; // invalidate cache
+  const st = document.getElementById('global-filter-status');
+  if (active) { st.style.display='inline'; st.textContent=`${FILTERED_RAW.length.toLocaleString()} rows match`; }
+  else          { st.style.display='none'; }
+
+  renderAll();
+}
+
+function applyDateFilter() { applyGlobalFilter(); } // backwards compat
+
+function setQuick(period) {
+  const fd=document.getElementById('date-from'), td=document.getElementById('date-to');
+  if (period==='all')   { fd.value=''; td.value=''; }
+  else if(period==='2024') { fd.value='2024-01-01'; td.value='2024-12-31'; }
+  else if(period==='2025') { fd.value='2025-01-01'; td.value='2025-12-31'; }
+  else if(period==='2026') { fd.value='2026-01-01'; td.value='2026-12-31'; }
+  else if(period==='last6') { const d=new Date(); d.setMonth(d.getMonth()-6); fd.value=d.toISOString().slice(0,10); td.value=new Date().toISOString().slice(0,10); }
+  else if(period==='last3') { const d=new Date(); d.setMonth(d.getMonth()-3); fd.value=d.toISOString().slice(0,10); td.value=new Date().toISOString().slice(0,10); }
+  applyGlobalFilter();
+}
+
+function clearAllFilters() {
+  ['date-from','date-to','filter-min-qty','filter-max-qty','filter-min-price','filter-max-price'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  applyGlobalFilter();
+}
+
+function getFA() {
+  if (_FA) return _FA;
+  const rows = FILTERED_RAW.length < D.raw.length ? FILTERED_RAW : D.raw;
+  const scA={}, cA={}, stA={}, moA={};
+  let tQ=0, tR=0;
+  const MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  for (const r of rows) {
+    if (!r.c||!r.sc||!r.sn) continue;
+    const rev=r.q*r.p; tQ+=r.q; tR+=rev;
+    if (!scA[r.sc]) scA[r.sc]={qty:0,rev:0,cu:new Set(),st:new Set()};
+    scA[r.sc].qty+=r.q; scA[r.sc].rev+=rev; scA[r.sc].cu.add(r.c); scA[r.sc].st.add(r.sn);
+    if (!cA[r.c]) cA[r.c]={qty:0,rev:0,sc:new Set(),st:new Set()};
+    cA[r.c].qty+=r.q; cA[r.c].rev+=rev; cA[r.c].sc.add(r.sc); cA[r.c].st.add(r.sn);
+    if (!stA[r.sn]) stA[r.sn]={qty:0,rev:0,sc:r.sc,price:0,cu:new Set()};
+    stA[r.sn].qty+=r.q; stA[r.sn].rev+=rev; if(r.p>0)stA[r.sn].price=r.p; stA[r.sn].cu.add(r.c);
+    if (r.dt) {
+      const d=r.dt instanceof Date?r.dt:new Date(r.dt+'T00:00:00');
+      if(!isNaN(d)){const mk=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;moA[mk]=(moA[mk]||0)+r.q;}
+    }
+  }
+  _FA = {
+    totalQty:tQ, totalRev:Math.round(tR),
+    subcuts: Object.entries(scA).filter(([sc])=>sc).map(([sc,v])=>({name:sc,qty:v.qty,revenue:Math.round(v.rev),customers:v.cu.size,styles:v.st.size})).sort((a,b)=>b.qty-a.qty),
+    customers: Object.entries(cA).filter(([c])=>c).map(([c,v])=>({name:c,qty:v.qty,revenue:Math.round(v.rev),sc:[...v.sc],vc:v.st.size})).sort((a,b)=>b.qty-a.qty),
+    styles: stA,
+    monthly: Object.entries(moA).sort(([a],[b])=>a<b?-1:1).map(([mk,q])=>{const[yr,mo]=mk.split('-');return{m:`${MN[+mo-1]} ${yr.slice(2)}`,q};}),
+  };
+  return _FA;
+}
+
+function globalStyleMap() {
+  if (!_globalStyleMap) {
+    _globalStyleMap={};
+    for(const r of D.raw){if(r.sn)_globalStyleMap[r.sn]=(_globalStyleMap[r.sn]||0)+r.q;}
+  }
+  return _globalStyleMap;
+}
+
+function getFilteredCustQR(name) {
+  if (!DATE_FROM&&!DATE_TO&&!FILTER_MIN_QTY&&FILTER_MAX_QTY===Infinity&&!FILTER_MIN_PRICE&&FILTER_MAX_PRICE===Infinity) return null;
+  const fa = getFA();
+  const c = fa.customers.find(x=>x.name===name);
+  return c ? {qty:c.qty, rev:c.revenue} : {qty:0,rev:0};
+}
+
+// ══════════════════════════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════════════════════════
+function fmt(n){return n>=1e7?'₹'+(n/1e7).toFixed(2)+'Cr':n>=1e5?'₹'+(n/1e5).toFixed(1)+'L':'₹'+n.toLocaleString('en-IN');}
+function fN(n){return n.toLocaleString('en-IN');}
+function rn(i){const l=['🥇','🥈','🥉'];const c=i===0?'rg':i===1?'rs':i===2?'rb':'';return`<span class="rank-num ${c}">${i<3?l[i]:i+1}</span>`;}
+function bar(lbl,pct,col,val){return`<div class="bar-item"><div class="bar-label"><span class="bar-name">${lbl}</span><span class="bar-val">${val}</span></div><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div></div>`;}
+function scColor(sc){if(!SC_COLORS[sc]){const idx=Object.keys(SC_COLORS).length%PALETTE.length;SC_COLORS[sc]=PALETTE[idx];}return SC_COLORS[sc];}
+
+function freqBadge(freq) {
+  const bg=freq>=5?'#e6f4f1':freq>=3?'#fef3e2':'#e8eef7';
+  const bc=freq>=5?'#b0ddd4':freq>=3?'#f0d8b0':'#baccdf';
+  const tc=freq>=5?'#2a8a72':freq>=3?'#b5622a':'#4a6fa5';
+  const label=freq===1?'1× order':`${freq}× reorders`;
+  return `<span style="display:inline-flex;align-items:center;gap:3px;background:${bg};border:1px solid ${bc};color:${tc};border-radius:4px;padding:1px 6px;font-size:10px;font-family:'IBM Plex Mono',monospace;font-weight:600" title="Ordered on ${freq} different dispatch dates">🔁 ${label}</span>`;
+}
+
+// ══════════════════════════════════════════════════════════════
+// TREND CHART
+// ══════════════════════════════════════════════════════════════
+function drawTrend(id, data, lc='#b5622a', fc='rgba(181,98,42,0.1)', H=180) {
+  const svg = document.getElementById(id); if (!svg||!data.length) return;
+  const W=700, max=Math.max(...data.map(d=>d.q),1);
+  const pts = data.map((d,i)=>({x:24+(i/(data.length-1||1))*(W-48),y:H-24-(d.q/max)*(H-40),d}));
+  const path = pts.map((p,i)=>i===0?`M${p.x},${p.y}`:`L${p.x},${p.y}`).join(' ');
+  const area = `M${pts[0].x},${H-24} ${pts.map(p=>`L${p.x},${p.y}`).join(' ')} L${pts[pts.length-1].x},${H-24} Z`;
+  const peak = pts.reduce((a,b)=>b.d.q>a.d.q?b:a,pts[0]);
+  let h='';
+  [.25,.5,.75,1].forEach(f=>{const y=H-24-f*(H-40);h+=`<line x1="24" y1="${y}" x2="${W-24}" y2="${y}" stroke="#e8e4de" stroke-width="1"/>`;h+=`<text x="20" y="${y+4}" text-anchor="end" font-size="9" fill="#9c978e" font-family="IBM Plex Mono,monospace">${Math.round(max*f)}</text>`;});
+  h+=`<path d="${area}" fill="${fc}"/><path d="${path}" fill="none" stroke="${lc}" stroke-width="2" stroke-linejoin="round"/>`;
+  pts.forEach((p,i)=>{if(i%4===0||i===pts.length-1)h+=`<circle cx="${p.x}" cy="${p.y}" r="3" fill="${lc}" opacity=".6"/>`;});
+  h+=`<circle cx="${peak.x}" cy="${peak.y}" r="5" fill="${lc}"/><text x="${peak.x}" y="${peak.y-8}" text-anchor="middle" font-size="10" fill="${lc}" font-family="IBM Plex Mono,monospace" font-weight="600">${peak.d.q}</text>`;
+  pts.forEach((p,i)=>{if(i%4===0)h+=`<text x="${p.x}" y="${H-6}" text-anchor="middle" font-size="9" fill="#9c978e" font-family="IBM Plex Mono,monospace">${p.d.m}</text>`;});
+  svg.innerHTML=h;
+}
+
+// ══════════════════════════════════════════════════════════════
+// OVERVIEW  (filter-aware)
+// ══════════════════════════════════════════════════════════════
+function renderOverview() {
+  const fa = getFA();
+  const totalStyles = D.style_groups.reduce((s,g)=>s+g.s.length,0);
+  const topStyle = D.style_groups.flatMap(g=>g.s).sort((a,b)=>b.qty-a.qty)[0];
+  const isFiltered = FILTERED_RAW.length < D.raw.length;
+  const dispQty = isFiltered ? fa.totalQty : D.total_qty;
+  const dispRev = isFiltered ? fa.totalRev : D.total_rev;
+  const filtNote = isFiltered ? ' <span style="font-size:10px;color:var(--accent)">(filtered)</span>' : '';
+  document.getElementById('kpi-grid').innerHTML = `
+    <div class="kpi-card" style="--ac:#b5622a"><div class="kpi-label">Total Revenue${filtNote}</div><div class="kpi-value">${fmt(dispRev)}</div><div class="kpi-sub">${D.total_rows.toLocaleString()} total records</div></div>
+    <div class="kpi-card" style="--ac:#4a6fa5"><div class="kpi-label">Total Units${filtNote}</div><div class="kpi-value">${fN(dispQty)}</div><div class="kpi-sub">${fa.customers.length} active customers</div></div>
+    <div class="kpi-card" style="--ac:#2a8a72"><div class="kpi-label">Styles (>10 sold)</div><div class="kpi-value">${totalStyles}</div><div class="kpi-sub">Across ${D.style_groups.length} sub cut categories</div></div>
+    <div class="kpi-card" style="--ac:#c0392b"><div class="kpi-label">Top Style #</div><div class="kpi-value">${topStyle?'#'+topStyle.n:'—'}</div><div class="kpi-sub">${topStyle?topStyle.qty+' units · '+fmt(topStyle.rev):'—'}</div></div>`;
+  drawTrend('trend-svg', fa.monthly.length ? fa.monthly : D.monthly);
+  const t5=fa.subcuts.slice(0,5), mr=t5[0]?.revenue||1;
+  document.getElementById('ov-sc').innerHTML=t5.map((s,i)=>bar(s.name,(s.revenue/mr)*100,PALETTE[i],fmt(s.revenue))).join('');
+  const t5c=fa.customers.slice(0,5), mq=t5c[0]?.qty||1;
+  document.getElementById('ov-cust').innerHTML=t5c.map((c,i)=>bar(c.name.slice(0,26),(c.qty/mq)*100,PALETTE[i],fN(c.qty)+' pcs')).join('');
+  const rpu=fa.subcuts.slice(0,8).map(s=>({n:s.name,v:s.qty?Math.round(s.revenue/s.qty):0})).sort((a,b)=>b.v-a.v);
+  const mr2=rpu[0]?.v||1;
+  document.getElementById('ov-rpu').innerHTML=rpu.map((s,i)=>bar(s.n,(s.v/mr2)*100,PALETTE[i],'₹'+fN(s.v))).join('');
+}
+
+// ══════════════════════════════════════════════════════════════
+// SUBCUTS  (filter-aware)
+// ══════════════════════════════════════════════════════════════
+function renderSubcuts() {
+  const fa = getFA();
+  const sort=document.getElementById('sc-sort').value;
+  const lim=parseInt(document.getElementById('sc-limit').value);
+  let d=[...fa.subcuts].filter(s=>s.name);
+  d.sort((a,b)=>sort==='qty'?b.qty-a.qty:sort==='revenue'?b.revenue-a.revenue:sort==='customers'?b.customers-a.customers:(b.revenue/b.qty)-(a.revenue/a.qty));
+  d=d.slice(0,lim);
+  const totalQty = fa.totalQty || 1;
+  document.getElementById('sc-tbody').innerHTML=d.map((s,i)=>{
+    const rpu=s.qty?Math.round(s.revenue/s.qty):0;
+    const sh=((s.qty/totalQty)*100).toFixed(1);
+    const bx=s.qty>2000?'<span class="badge bg">⭐ STAR</span>':s.qty>500?'<span class="badge br">🔥 HOT</span>':s.customers>20?'<span class="badge bc">📡 WIDE</span>':'<span class="badge bb">◆ NICHE</span>';
+    return`<tr><td>${rn(i)}</td><td><span class="dot" style="background:${scColor(s.name)};margin-right:7px"></span><strong>${s.name}</strong></td><td class="num">${fN(s.qty)}</td><td class="num">${fmt(s.revenue)}</td><td class="num">₹${fN(rpu)}</td><td class="num">${s.customers}</td><td class="num">${s.styles}</td><td>${bx}</td></tr>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════════════════════════════
+// STYLE GROUPS  (filter-aware for qty > 10 threshold)
+// ══════════════════════════════════════════════════════════════
+function renderSG() {
+  const sort=document.getElementById('snsort').value;
+  const fa = getFA();
+  const fe=document.getElementById('snfilter');
+  if(fe.options.length===1){D.style_groups.forEach(g=>{const o=document.createElement('option');o.value=g.sc;o.text=`${g.sc} (${g.s.length})`;fe.appendChild(o);});}
+
+  // Build style groups from filtered data
+  const sgMap = {};
+  for (const [sn, v] of Object.entries(fa.styles)) {
+    if (v.qty > 10 && v.sc) {
+      if (!sgMap[v.sc]) sgMap[v.sc] = [];
+      sgMap[v.sc].push({n:sn, qty:v.qty, rev:Math.round(v.rev), price:Math.round(v.price), cust:v.cu.size});
+    }
+  }
+  const groups = Object.entries(sgMap)
+    .map(([sc, styles]) => ({sc, tq:styles.reduce((s,x)=>s+x.qty,0), s:styles}))
+    .sort((a,b) => b.tq - a.tq);
+
+  const totalQualifying = groups.reduce((s,g)=>s+g.s.length,0);
+  document.getElementById('sn-count-sub').textContent = `${totalQualifying} styles with qty > 10. Click any group to expand.`;
+  const nMo = (fa.monthly.length||D.monthly.length||28);
+
+  document.getElementById('sg-container').innerHTML=groups.map((g,gi)=>{
+    const col=scColor(g.sc);
+    const sorted=[...g.s].sort((a,b)=>sort==='qty'?b.qty-a.qty:sort==='revenue'?b.rev-a.rev:b.cust-a.cust);
+    const mq=sorted[0]?.qty||1, tr=sorted.reduce((s,r)=>s+r.rev,0);
+    const rows=sorted.map((s,i)=>{
+      const pct=((s.qty/mq)*100).toFixed(0);
+      const star=s.qty>=40?'<span class="badge bg" style="font-size:9px;padding:1px 5px">⭐</span>':s.qty>=25?'<span class="badge br" style="font-size:9px;padding:1px 5px">🔥</span>':'';
+      return`<tr>
+        <td style="color:var(--text3);font-family:IBM Plex Mono,monospace;font-size:11px;padding:7px 12px;width:32px">${i+1}</td>
+        <td style="padding:7px 12px"><strong style="font-family:IBM Plex Mono,monospace;color:${col}">#${s.n}</strong></td>
+        <td style="padding:7px 12px"><div style="display:flex;align-items:center;gap:8px"><div style="width:100px;background:#f0ede8;height:6px;border-radius:3px"><div style="width:${pct}%;height:100%;background:${col};border-radius:3px;opacity:.75"></div></div><strong style="font-family:IBM Plex Mono,monospace;font-size:13px;color:${col};min-width:24px">${s.qty}</strong>${star}</div></td>
+        <td style="text-align:right;font-family:IBM Plex Mono,monospace;font-size:12px;color:var(--text2);padding:7px 12px">${fmt(s.rev)}</td>
+        <td style="text-align:right;font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--text3);padding:7px 12px">${s.price?'₹'+fN(s.price):'—'}</td>
+        <td style="text-align:center;font-family:IBM Plex Mono,monospace;font-size:12px;color:var(--text2);padding:7px 12px">${s.cust}</td>
+        <td style="text-align:right;font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--text3);padding:7px 12px">${(s.qty/nMo).toFixed(1)}/mo</td>
+      </tr>`;
+    }).join('');
+    return`<div class="sg" data-sc="${g.sc}" id="sg-${gi}">
+      <div style="height:3px;background:${col}"></div>
+      <div class="sg-hdr" onclick="tg(${gi})" id="sh-${gi}" style="--sg-color:${col}">
+        <div><div class="sg-name" style="color:${col}">${g.sc}</div><div class="sg-meta">${g.s.length} qualifying styles · ${fN(g.tq)} units</div></div>
+        <div style="display:flex;align-items:center;gap:16px">
+          <div><div class="sg-stat-lbl">Best Style</div><div class="sg-stat-val" style="font-size:11px;font-family:IBM Plex Mono,monospace">#${sorted[0]?.n} (${sorted[0]?.qty} pcs)</div></div>
+          <div><div class="sg-stat-lbl">Qual. Rev</div><div class="sg-stat-val">${fmt(tr)}</div></div>
+          <div><div class="sg-stat-lbl">Styles</div><div class="sg-stat-val" style="color:${col}">${g.s.length}</div></div>
+          <span class="chevron">▼</span>
+        </div>
+      </div>
+      <div class="sg-body" id="sb-${gi}">
+        <table class="sg-inner-table"><thead><tr><th>#</th><th>Style No.</th><th>Units Sold</th><th style="text-align:right">Revenue</th><th style="text-align:right">MRP</th><th style="text-align:center">Customers</th><th style="text-align:right">Run Rate</th></tr></thead><tbody>${rows}</tbody></table>
+      </div></div>`;
+  }).join('');
+}
+
+function tg(i){document.getElementById('sh-'+i)?.classList.toggle('open');document.getElementById('sb-'+i)?.classList.toggle('open');}
+function expandAll(){document.querySelectorAll('.sg-hdr,.sg-body').forEach(el=>el.classList.add('open'));}
+function collapseAll(){document.querySelectorAll('.sg-hdr,.sg-body').forEach(el=>el.classList.remove('open'));}
+function filterSG(){
+  const f=document.getElementById('snfilter').value;
+  const s=document.getElementById('snsearch').value.toLowerCase();
+  document.querySelectorAll('.sg').forEach((el,i)=>{
+    const sc=el.dataset.sc||'';
+    const ok=(!f||sc===f)&&(!s||sc.toLowerCase().includes(s)||el.textContent.includes(s));
+    el.style.display=ok?'':'none';
+    if(s&&ok){document.getElementById('sh-'+i)?.classList.add('open');document.getElementById('sb-'+i)?.classList.add('open');}
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// CUSTOMERS  (fully filter-aware via getFA())
+// ══════════════════════════════════════════════════════════════
+function renderCusts() {
+  const fa = getFA();
+  const sort=document.getElementById('cust-sort').value;
+  const search=document.getElementById('cust-search').value.toLowerCase();
+  let d=[...fa.customers].filter(c=>!search||c.name.toLowerCase().includes(search));
+  d.sort((a,b)=>sort==='qty'?b.qty-a.qty:sort==='revenue'?b.revenue-a.revenue:b.sc.length-a.sc.length);
+
+  const countEl=document.getElementById('cust-count-label');
+  if(countEl) countEl.textContent=`${d.length} customers shown`;
+
+  window._drillMap={};
+  d.forEach(c=>{ window._drillMap[c.name]=D.drill?.[c.name]||{}; });
+
+  function seg(c){return c.qty>1000?'<span class="badge bg">🏆 Platinum</span>':c.qty>400?'<span class="badge br">🔥 Gold</span>':c.qty>150?'<span class="badge bc">💎 Silver</span>':'<span class="badge bb">◆ Bronze</span>';}
+
+  document.getElementById('cust-tbody').innerHTML=d.map((c,i)=>{
+    const rpu=c.qty>0?Math.round(c.revenue/c.qty):0;
+    const isFiltered=FILTERED_RAW.length<D.raw.length;
+    const filtTag=isFiltered?'<span style="font-size:9px;color:var(--accent);margin-left:3px;font-family:IBM Plex Mono,monospace">filtered</span>':'';
+    const safeName=c.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    return`<tr onclick="openDrillByName('${safeName}',this)" style="cursor:pointer">
+      <td>${rn(i)}</td>
+      <td style="display:flex;align-items:center;gap:6px;font-weight:500"><span style="font-size:10px;color:var(--text3)">▶</span>${c.name.length>34?c.name.slice(0,31)+'…':c.name}</td>
+      <td class="num"><strong>${fN(c.qty)}</strong>${filtTag}</td>
+      <td class="num">${fmt(c.revenue)}</td>
+      <td class="num">₹${fN(rpu)}</td>
+      <td class="num">${c.sc.length}</td>
+      <td class="num">${c.vc}</td>
+      <td>${seg(c)}</td>
+      <td><span class="badge bb" style="font-size:9px">${c.sc[0]||'—'}</span></td>
+    </tr>`;
+  }).join('');
+  closeDrill();
+}
+
+// Reads drill data — uses FILTERED_RAW when a date filter is active,
+// falls back to D.drill (pre-computed all-time data) when no filter is set.
+function openDrillByName(custName, rowEl) {
+  let drillData;
+
+  if ((DATE_FROM || DATE_TO) && FILTERED_RAW.length > 0) {
+    // Recompute from the filtered rows so sub cuts + styles match the date window
+    const scAcc = {};
+    for (const r of FILTERED_RAW) {
+      if (r.c !== custName || !r.sc || !r.sn) continue;
+      const rev = r.q * r.p;
+      if (!scAcc[r.sc]) scAcc[r.sc] = { qty:0, rev:0, styles:{} };
+      scAcc[r.sc].qty += r.q;
+      scAcc[r.sc].rev += rev;
+      const st = scAcc[r.sc].styles;
+      if (!st[r.sn]) st[r.sn] = { qty:0, rev:0, price:0, dates:new Set() };
+      st[r.sn].qty += r.q;
+      st[r.sn].rev += rev;
+      if (r.p > 0) st[r.sn].price = r.p;
+      if (r.d) st[r.sn].dates.add(r.d);
+    }
+    // Shape into the same structure openDrill expects
+    drillData = {};
+    for (const [sc, v] of Object.entries(scAcc)) {
+      const topStyles = Object.entries(v.styles)
+        .sort((a,b) => b[1].qty - a[1].qty)
+        .slice(0, 25)
+        .map(([sn, s]) => ({
+          n: sn, qty: s.qty, rev: Math.round(s.rev),
+          price: s.price, freq: s.dates.size
+        }));
+      drillData[sc] = { qty: v.qty, rev: Math.round(v.rev), styles: topStyles };
+    }
+  } else {
+    // No filter — use pre-computed all-time drill data
+    drillData = D.drill?.[custName] || {};
+  }
+
+  openDrill(custName, drillData, rowEl);
+}
+
+function openDrill(custName, drillData, rowEl) {
+  if (!drillData || !Object.keys(drillData).length) return;
+  if (activeCustRow) { activeCustRow.style.background=''; const sp=activeCustRow.querySelector('span'); if(sp)sp.textContent='▶'; }
+  rowEl.style.background='#fdf0e8';
+  rowEl.querySelector('span').textContent='▼';
+  activeCustRow = rowEl;
+
+  document.getElementById('drill-cust-name').textContent = custName;
+  const chip = document.getElementById('active-filter-chip');
+  if (chip && document.getElementById('drill-date-label')) {
+    document.getElementById('drill-date-label').textContent = chip.style.display!=='none' ? `(filtered: ${document.getElementById('date-from').value||'start'} → ${document.getElementById('date-to').value||'end'})` : '';
+  }
+  document.getElementById('drill-styles').style.display='none';
+
+  const entries = Object.entries(drillData).sort((a,b)=>b[1].qty-a[1].qty);
+  const maxQ = entries[0]?.[1]?.qty || 1;
+
+  // Store sub cut data in a global map — avoids JSON-in-onclick (same fix as _drillMap)
+  window._scMap = {};
+  entries.forEach(([sc, data]) => { window._scMap[sc] = data; });
+
+  document.getElementById('drill-sc-cards').innerHTML = entries.map(([sc, data])=>{
+    if (!sc) return '';
+    const col = scColor(sc);
+    const pct = ((data.qty/maxQ)*100).toFixed(0);
+    const safeSc = sc.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    return`<div class="drill-sc-card" style="border-color:${col}30;border-top-color:${col}" onclick="openStyleDrillByKey('${safeSc}')">
+      <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:13px;color:${col}">${sc}</div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:17px;font-weight:700;margin:4px 0">${fN(data.qty)}</div>
+      <div style="background:#f0ede8;border-radius:2px;height:5px;margin-bottom:4px"><div style="width:${pct}%;height:100%;background:${col};border-radius:2px;opacity:.7"></div></div>
+      <div style="font-size:10px;color:var(--text3)">${fmt(data.rev)}</div>
+      <div style="font-size:9px;color:var(--text3);margin-top:2px;font-family:'IBM Plex Mono',monospace">tap → style numbers</div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('drill-panel').style.display='block';
+  document.getElementById('drill-panel').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+// Reads sub cut data from window._scMap — no JSON embedded in onclick attribute
+function openStyleDrillByKey(sc) {
+  const data = window._scMap?.[sc];
+  if (data) openStyleDrill(sc, data);
+}
+
+function openStyleDrill(sc, data) {
+  _curSC = sc; _curSCData = data;
+  document.getElementById('drill-sc-label').textContent = sc;
+  document.getElementById('drill-sc-label').style.color = scColor(sc);
+  document.getElementById('drill-styles').style.display='block';
+  redrawStyleTable();
+}
+
+function redrawStyleTable() {
+  if (!_curSC || !_curSCData) return;
+  const col   = scColor(_curSC);
+  const topN  = parseInt(document.getElementById('drill-top-n')?.value) || 10;
+  const sortBy = document.getElementById('drill-sort')?.value || 'qty';
+  const gsMap = globalStyleMap();
+
+  let styles = [...(_curSCData.styles||[])];
+  if (sortBy==='freq') styles.sort((a,b)=>b.freq-a.freq);
+  else if (sortBy==='rev') styles.sort((a,b)=>b.rev-a.rev);
+  else styles.sort((a,b)=>b.qty-a.qty);
+  styles = styles.slice(0, topN);
+  const maxQ = styles[0]?.qty || 1;
+
+  const rows = styles.map((s,i)=>{
+    const pct = ((s.qty/maxQ)*100).toFixed(0);
+    const gQty = gsMap[s.n] || s.qty;
+    const isHit = gQty >= 30;
+    const globalBadge = `<span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:${isHit?'#2a8a72':'#9c978e'};font-weight:${isHit?700:400}" title="Total sold to all customers">${fN(gQty)} pcs${isHit?' 🌍':''}</span>`;
+    return`<tr>
+      <td style="color:var(--text3);font-size:11px;font-family:'IBM Plex Mono',monospace;padding:7px 10px">${i+1}</td>
+      <td style="padding:7px 10px;font-family:'IBM Plex Mono',monospace;font-weight:700;color:${col}">#${s.n}</td>
+      <td style="padding:7px 10px"><div style="display:flex;align-items:center;gap:8px">
+        <div style="width:80px;background:#f0ede8;height:6px;border-radius:3px"><div style="width:${pct}%;height:100%;background:${col};border-radius:3px;opacity:.75"></div></div>
+        <strong style="font-family:'IBM Plex Mono',monospace;color:${col}">${s.qty} pcs</strong>
+      </div></td>
+      <td style="padding:7px 10px;text-align:center">${freqBadge(s.freq||1)}</td>
+      <td style="padding:7px 10px;text-align:right">${globalBadge}</td>
+      <td style="padding:7px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--text2)">${s.rev>0?fmt(s.rev):'—'}</td>
+      <td style="padding:7px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text3)">${s.price?'₹'+fN(s.price):'—'}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('drill-style-table').innerHTML=`
+    <table style="width:100%;border-collapse:collapse;font-size:12.5px">
+      <thead><tr style="background:#faf9f7;border-bottom:2px solid var(--border)">
+        <th style="padding:7px 10px;text-align:left;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">#</th>
+        <th style="padding:7px 10px;text-align:left;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Style No.</th>
+        <th style="padding:7px 10px;text-align:left;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">This Customer</th>
+        <th style="padding:7px 10px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Reorder Freq</th>
+        <th style="padding:7px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">All Customers Total</th>
+        <th style="padding:7px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Revenue</th>
+        <th style="padding:7px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">MRP</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function closeDrill(){
+  document.getElementById('drill-panel').style.display='none';
+  if(activeCustRow){activeCustRow.style.background='';const s=activeCustRow.querySelector('span');if(s)s.textContent='▶';activeCustRow=null;}
+}
+
+// ══════════════════════════════════════════════════════════════
+// CLUSTERS (auto-generated)
+// ══════════════════════════════════════════════════════════════
+function renderClusters() {
+  const top = D.customers.slice(0, 12);
+  const topSCs = D.subcuts.slice(0, 8).map(s => s.name);
+
+  // Simple auto-clustering by top sub cut
+  const clusterMap = {};
+  top.forEach(c => {
+    const topSC = c.sc.slice().sort((a,b) => {
+      const da = D.drill[c.name]?.[a]?.qty || 0;
+      const db = D.drill[c.name]?.[b]?.qty || 0;
+      return db - da;
+    })[0] || c.sc[0];
+    if (!clusterMap[topSC]) clusterMap[topSC] = [];
+    clusterMap[topSC].push(c.name);
+  });
+
+  const clusters = [
+    { n: '⭐ Platinum Volume', c: '#b5622a', members: top.filter(c=>c.qty>1000).map(c=>c.name), d: `${top.filter(c=>c.qty>1000).length} customers with 1,000+ units each. Your most critical accounts.`, t:['1000+ units','Multi sub-cut','Priority service'] },
+    { n: '🔥 Gold Mid Buyers', c: '#4a6fa5', members: top.filter(c=>c.qty>400&&c.qty<=1000).map(c=>c.name), d: 'Active buyers buying 400–1000 units across many sub cuts. Good for new style testing.', t:['400–1000 units','Wide assortment','New style testers'] },
+    { n: '💎 Silver Regulars', c: '#2a8a72', members: top.filter(c=>c.qty>150&&c.qty<=400).map(c=>c.name), d: 'Consistent 150–400 unit buyers. Reliable reorder frequency but room to grow.', t:['150–400 units','Consistent reorder','Growth potential'] },
+  ].filter(cl => cl.members.length > 0);
+
+  document.getElementById('cl-grid').innerHTML = clusters.map(cl => `
+    <div class="cl-card" style="border-left:3px solid ${cl.c}">
+      <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;color:${cl.c};margin-bottom:5px">${cl.n}</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.6">${cl.d}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px">${cl.members.map(m=>`<span class="pill">${m.length>22?m.slice(0,20)+'…':m}</span>`).join('')}</div>
+      <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap">${cl.t.map(t=>`<span class="pill">${t}</span>`).join('')}</div>
+    </div>`).join('');
+
+  // Heatmap
+  const topCusts = D.customers.slice(0, 10);
+  let html = `<table class="hm-table"><thead><tr><th class="hm-lbl">Customer</th>${topSCs.map(s=>`<th style="color:var(--accent)">${s}</th>`).join('')}</tr></thead><tbody>`;
+  const maxH = D.drill[topCusts[0]?.name]?.[topSCs[0]]?.qty || 1;
+  topCusts.forEach(c => {
+    const name = c.name.length>22?c.name.slice(0,20)+'…':c.name;
+    html += `<tr><td class="hm-lbl">${name}</td>`;
+    topSCs.forEach(sc => {
+      const v = D.drill[c.name]?.[sc]?.qty || 0;
+      const p = v/(maxH||1);
+      const bg = p>0.6?'#b5622a':p>0.3?'#e8956a':p>0.1?'#f5cba8':v>0?'#fdebd8':'#f8f7f4';
+      const tc = p>0.6?'#fff':p>0.3?'#6a2a0a':'#9c978e';
+      html += `<td style="background:${bg};color:${tc};font-weight:${v>0?600:400}" title="${c.name} × ${sc}: ${v} units">${v||'—'}</td>`;
+    });
+    html += '</tr>';
+  });
+  document.getElementById('hm-container').innerHTML = html + '</tbody></table>';
+}
+
+// ══════════════════════════════════════════════════════════════
+// RENDER ALL  — called whenever any filter changes
+// ══════════════════════════════════════════════════════════════
+function renderAll() {
+  renderOverview();
+  renderSubcuts();
+  renderSG();
+  renderCusts();
+  renderClusters();
+  renderInsights();
+}
+
+// ══════════════════════════════════════════════════════════════
+// INSIGHTS  (filter-aware)
+// ══════════════════════════════════════════════════════════════
+function renderInsights() {
+  const fa = getFA();
+  const top1SC   = fa.subcuts[0];
+  const top1Cust = fa.customers[0];
+  const allMonths = fa.monthly;
+  const minMonth = allMonths.length>1?allMonths.reduce((a,b)=>b.q<a.q?b:a,allMonths[0]):null;
+  const maxMonth = allMonths.length>1?allMonths.reduce((a,b)=>b.q>a.q?b:a,allMonths[0]):null;
+  const topRPU = fa.subcuts.slice(0,10).filter(s=>s.qty>0).sort((a,b)=>(b.revenue/b.qty)-(a.revenue/a.qty))[0];
+  const topStyleAll = D.style_groups.flatMap(g=>g.s).sort((a,b)=>b.qty-a.qty)[0];
+
+  const ins = [
+    top1SC    ? {i:'🏆',t:`${top1SC.name} Dominates`,c:'#b5622a',b:`<strong>${top1SC.name} = ${fa.totalQty?((top1SC.qty/fa.totalQty)*100).toFixed(0):0}% of all units</strong> (${fN(top1SC.qty)} pcs, ${fmt(top1SC.revenue)}). Widest reach — ${top1SC.customers} customers.`} : null,
+    top1Cust  ? {i:'👑',t:`Top Customer: ${top1Cust.name.split(' ')[0]}`,c:'#4a6fa5',b:`#1 account with <strong>${fN(top1Cust.qty)} units</strong> and <strong>${fmt(top1Cust.revenue)}</strong>. Buys ${top1Cust.sc.length} sub cuts.`} : null,
+    topStyleAll ? {i:'🔥',t:`Hero Style: #${topStyleAll.n}`,c:'#c0392b',b:`Style #${topStyleAll.n} is the all-time bestseller with <strong>${topStyleAll.qty} units</strong> and ${fmt(topStyleAll.rev)} revenue.`} : null,
+    maxMonth  ? {i:'📈',t:`Peak Month: ${maxMonth.m}`,c:'#2a8a72',b:`Highest dispatch month — <strong>${maxMonth.m}: ${maxMonth.q} units</strong>. Plan production to support this level.`} : null,
+    minMonth  ? {i:'⚠️',t:`Slowest: ${minMonth.m}`,c:'#2a7a8a',b:`<strong>${minMonth.m} is your slowest month</strong> (${minMonth.q} units). Consider pre-season promos or slowing production.`} : null,
+    topRPU    ? {i:'💎',t:`Premium Cut: ${topRPU.name}`,c:'#7a5195',b:`${topRPU.name} earns <strong>₹${fN(Math.round(topRPU.revenue/topRPU.qty))} per unit</strong> — highest-value sub cut. Never discount this.`} : null,
+  ].filter(Boolean);
+
+  document.getElementById('ins-grid').innerHTML = ins.map(x=>`<div class="ins-card" style="--ic:${x.c}"><div class="ins-icon">${x.i}</div><div class="ins-title">${x.t}</div><div class="ins-body">${x.b}</div></div>`).join('');
+
+  const topSCNames = fa.subcuts.slice(0,4).map(s=>s.name);
+  const rows = fa.customers.slice(0,8).map(c => {
+    const missing = topSCNames.filter(sc => !c.sc.includes(sc));
+    if (!missing.length) return null;
+    return `<tr><td style="font-weight:500">${c.name.length>30?c.name.slice(0,28)+'…':c.name}</td><td style="font-size:12px;color:var(--text2)">${c.sc.slice(0,4).join(', ')}</td><td style="font-size:12px;color:var(--accent4)">${missing.join(', ')}</td><td style="font-size:12px;color:var(--accent3)">Pitch ${missing[0]} on next order</td></tr>`;
+  }).filter(Boolean);
+  document.getElementById('cs-tbody').innerHTML = rows.join('') || '<tr><td colspan="4" style="padding:16px;text-align:center;color:var(--text3)">No cross-sell gaps — great coverage!</td></tr>';
+
+  // Show/hide API key setup based on saved key
+  const hasKey = !!localStorage.getItem('anthro_key');
+  const setupEl = document.getElementById('api-key-setup');
+  if (setupEl) setupEl.style.display = hasKey ? 'none' : 'block';
+}
+
+// ══════════════════════════════════════════════════════════════
+// AI INSIGHTS
+// ══════════════════════════════════════════════════════════════
+function saveApiKey() {
+  const key = document.getElementById('api-key-input').value.trim();
+  if (!key.startsWith('sk-ant')) { alert('Please enter a valid Anthropic API key (starts with sk-ant)'); return; }
+  localStorage.setItem('anthro_key', key);
+  document.getElementById('api-key-setup').style.display = 'none';
+  alert('API key saved! Click Generate AI Insights to proceed.');
+}
+
+async function generateAIInsights() {
+  const key = localStorage.getItem('anthro_key');
+  if (!key) {
+    document.getElementById('api-key-setup').style.display = 'block';
+    document.getElementById('api-key-input').focus();
+    return;
+  }
+
+  // Warn if opened from file:// — browser blocks API calls from local files
+  if (window.location.protocol === 'file:') {
+    document.getElementById('ai-panel').style.display = 'block';
+    document.getElementById('ai-loading').style.display = 'none';
+    document.getElementById('ai-content').innerHTML = `<div style="background:#fef3e2;border:1px solid #f0d8b0;border-radius:8px;padding:14px;color:#b5622a;font-size:13px;line-height:1.7">
+      <strong>⚠️ Open this file through a local server to use AI Insights.</strong><br><br>
+      Chrome blocks API calls when opening HTML files directly (<code>file://</code>). Quick fix:<br><br>
+      <strong>Option 1 — Python (easiest):</strong><br>
+      Open a terminal in the dashboard folder and run:<br>
+      <code style="background:#f5e6d0;padding:3px 8px;border-radius:4px;display:inline-block;margin-top:4px">python -m http.server 8080</code><br>
+      Then open <code>http://localhost:8080/KK_Dashboard.html</code> in Chrome.<br><br>
+      <strong>Option 2 — VS Code:</strong><br>
+      Install the "Live Server" extension → right-click the HTML file → Open with Live Server.<br><br>
+      <strong>Option 3 — Netlify Drop:</strong><br>
+      Drag the file to <code>app.netlify.com/drop</code> — AI Insights will work from any browser.
+    </div>`;
+    document.getElementById('ai-gen-btn').disabled = false;
+    document.getElementById('ai-gen-btn').textContent = '✨ Generate AI Insights';
+    return;
+  }
+
+  const fa = getFA();
+  const panel = document.getElementById('ai-panel');
+  const loading = document.getElementById('ai-loading');
+  const content = document.getElementById('ai-content');
+  panel.style.display = 'block';
+  loading.style.display = 'block';
+  content.innerHTML = '';
+  document.getElementById('ai-gen-btn').disabled = true;
+  document.getElementById('ai-gen-btn').textContent = '⏳ Generating…';
+
+  const top5sc = fa.subcuts.slice(0,5).map(s=>`${s.name}: ${fN(s.qty)} units, ${fmt(s.revenue)}, ${s.customers} customers`).join('\n');
+  const top8cu = fa.customers.slice(0,8).map(c=>`${c.name}: ${fN(c.qty)} units, ${fmt(c.revenue)}, buys ${c.sc.slice(0,4).join('/')}`).join('\n');
+  const topStyles = D.style_groups.flatMap(g=>g.s).sort((a,b)=>b.qty-a.qty).slice(0,10).map(s=>`#${s.n}(${s.qty}pcs)`).join(', ');
+  const monthSummary = fa.monthly.slice(-12).map(m=>`${m.m}:${m.q}`).join(', ');
+  const dateNote = (DATE_FROM||DATE_TO) ? `Date filter: ${DATE_FROM||'start'} to ${DATE_TO||'end'}` : 'All-time data';
+
+  const prompt = `You are a senior business analyst for an Indian fashion/garment business. Analyse this dispatch data and give exactly 20 sharp business insights as plain numbered bullet points. No headers, no sub-bullets, no markdown. Each point must be one clear sentence with a specific number or fact from the data. Cover performance, customer behaviour, seasonal patterns, pricing, reorder opportunities, risks, and actions to take.
+
+${dateNote}
+Total: ${fN(fa.totalQty)} units | ${fmt(fa.totalRev)} revenue | ${fa.customers.length} customers
+
+TOP SUB CUTS:\n${top5sc}
+
+TOP CUSTOMERS:\n${top8cu}
+
+TOP STYLE NUMBERS: ${topStyles}
+
+MONTHLY TREND (last 12 months): ${monthSummary}
+
+Write exactly 20 insights numbered 1-20. Be specific, use the actual numbers. Focus on what the business owner should DO.`;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1200,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    const data = await res.json();
+    if (data.error) {
+      content.innerHTML = `<span style="color:red">API Error: ${data.error.message}</span>`;
+    } else {
+      const text = data.content?.[0]?.text || '';
+      const lines = text.split('\n').filter(l => l.trim());
+      content.innerHTML = '<ol style="padding-left:20px;margin:0">' +
+        lines.map(l => `<li style="margin-bottom:8px;padding-left:4px">${l.replace(/^\d+\.\s*/,'')}</li>`).join('') +
+        '</ol>';
+    }
+  } catch(e) {
+    content.innerHTML = `<span style="color:red">Error: ${e.message}</span>`;
+  }
+
+  loading.style.display = 'none';
+  document.getElementById('ai-gen-btn').disabled = false;
+  document.getElementById('ai-gen-btn').textContent = '✨ Generate AI Insights';
+}
+
+// ══════════════════════════════════════════════════════════════
+// CSV EXPORTS
+// ══════════════════════════════════════════════════════════════
+function dl(content,fn){const b=new Blob([content],{type:'text/csv;charset=utf-8;'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=fn;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(u);}
+function exportAllCSV(){let c='Sub Cut,Style Number,Units Sold,Revenue (INR),MRP (INR),Customers\n';D.style_groups.forEach(g=>g.s.forEach(s=>{c+=`${g.sc},${s.n},${s.qty},${s.rev},${s.price||''},${s.cust}\n`;}));dl(c,'KK_All_Styles.csv');}
+function exportSubcutsCSV(){let c='Sub Cut,Units Sold,Revenue INR,Rev Per Unit,Customers,All Variants\n';D.subcuts.forEach(s=>{c+=`${s.name},${s.qty},${s.revenue},${Math.round(s.revenue/s.qty)},${s.customers},${s.styles}\n`;});dl(c,'KK_SubCuts.csv');}
+function exportStylesCSV(){let c='Sub Cut,Style Number,Units Sold,Revenue INR,MRP INR,Customers\n';D.style_groups.forEach(g=>g.s.forEach(s=>{c+=`${g.sc},${s.n},${s.qty},${s.rev},${s.price||''},${s.cust}\n`;}));dl(c,'KK_Styles.csv');}
+function exportCustomersCSV(){
+  const {customers} = buildFilteredAnalytics();
+  let c='Customer,Units,Revenue INR,Rev Per Unit,Sub Cuts,Style Variants,Segment\n';
+  customers.forEach(x=>{const seg=x.qty>1000?'Platinum':x.qty>400?'Gold':x.qty>150?'Silver':'Bronze';c+=`"${x.name}",${x.qty},${x.revenue},${Math.round(x.revenue/x.qty)},${x.sc.length},${x.vc},${seg}\n`;});
+  dl(c,'KK_Customers.csv');
+}
+
+// ══════════════════════════════════════════════════════════════
+// TABS & APP INIT
+// ══════════════════════════════════════════════════════════════
+function switchTab(name, el) {
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  el.classList.add('active');
+}
+
+function initDashboard() {
+  D.subcuts.forEach(s => scColor(s.name));
+  _FA = null;
+  _globalStyleMap = null;
+
+  document.getElementById('hdr-sub').textContent = `Dispatch & Sales Analytics · ${D.date_range}`;
+  document.getElementById('hdr-meta').innerHTML = `Records: <b>${D.total_rows.toLocaleString()}</b> &nbsp;|&nbsp; Units: <b>${fN(D.total_qty)}</b> &nbsp;|&nbsp; Revenue: <b>${fmt(D.total_rev)}</b>`;
+
+  document.getElementById('upload-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+
+  renderAll();
+  showLoading(false);
+}
+
+function resetApp() {
+  D = null; FILTERED_RAW = []; DATE_FROM = null; DATE_TO = null; activeCustRow = null;
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('upload-screen').style.display = 'flex';
+  document.getElementById('file-input').value = '';
+  document.getElementById('upload-err').style.display = 'none';
+}
+
+function showLoading(on) { document.getElementById('loading').className = on?'loading-overlay show':'loading-overlay'; }
+function showErr(msg) { const el=document.getElementById('upload-err'); el.textContent=msg; el.style.display='block'; }
+
+document.getElementById('drop-zone').addEventListener('dragover', e=>e.preventDefault());
+document.getElementById('drop-zone').addEventListener('drop', e=>{e.preventDefault();handleFile(e.dataTransfer.files[0]);});
+
+// If data was injected by process_csv.py, auto-load it
+/*__DATA__*/
+if(typeof DATA!=='undefined'&&DATA){
+  D=DATA;FILTERED_RAW=[...D.raw];
+  document.addEventListener('DOMContentLoaded',()=>initDashboard());
+}
+</script>
+</body>
+</html>
