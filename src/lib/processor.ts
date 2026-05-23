@@ -265,8 +265,8 @@ export function process(rows: SheetRow[]): DashboardData {
 
   // ── Drill-down: top 30 customers, top 10 SCs each, top 25 styles each ──
   const drillJson: DrillData = {};
-  const top30 = customers.slice(0, 30).map((c) => c.name);
-  for (const cust of top30) {
+  const allCustNames = customers.map((c) => c.name);
+  for (const cust of allCustNames) {
     const lvl1 = drill.get(cust);
     if (!lvl1) continue;
 
