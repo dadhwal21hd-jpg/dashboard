@@ -84,4 +84,12 @@ export interface DashboardData {
   monthly: MonthlyEntry[];
   drill: DrillData;
   raw: RawRow[];
+  /** Clustered view of customers — same shape as `customers`, members merged. */
+  clustered_customers: Customer[];
+  /** Drill-down data keyed by cluster name (merged across all member customers). */
+  clustered_drill: DrillData;
+  /** Map: original customer name → cluster name (for those that belong to a cluster). */
+  cluster_membership: Record<string, string>;
+  /** Default qty threshold for Style Numbers tab (UI default; user can override). */
+  style_threshold_default: number;
 }

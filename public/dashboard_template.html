@@ -175,7 +175,7 @@ select:focus,input:focus{outline:none;border-color:var(--accent);}
 <!-- ═══════════════════════════════════════════════════════════ UPLOAD SCREEN -->
 <div id="upload-screen">
   <div style="text-align:center">
-    <div class="logo" style="font-size:26px;margin-bottom:6px"> <span>Design</span> Intelligence</div>
+    <div class="logo" style="font-size:26px;margin-bottom:6px">KK <span>Design</span> Intelligence</div>
     <div style="font-size:13px;color:var(--text3)">Dispatch Analytics Dashboard</div>
   </div>
 
@@ -209,7 +209,7 @@ select:focus,input:focus{outline:none;border-color:var(--accent);}
 <div id="app">
 <div class="header">
   <div>
-    <div class="logo"> <span>Design</span> Intelligence</div>
+    <div class="logo">KK <span>Design</span> Intelligence</div>
     <div id="hdr-sub" style="font-size:11px;color:var(--text3);margin-top:1px;font-family:'IBM Plex Mono',monospace"></div>
   </div>
   <div class="header-right">
@@ -308,6 +308,8 @@ select:focus,input:focus{outline:none;border-color:var(--accent);}
     </div>
   </div>
   <div class="filter-row">
+    <span class="filter-label">Min units:</span>
+    <input type="number" id="style-threshold" min="0" step="1" value="10" oninput="onStyleThresholdChange()" style="width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-family:'IBM Plex Mono',monospace;font-size:12px;text-align:right;">
     <span class="filter-label">Sub Cut:</span>
     <select id="snfilter" onchange="filterSG()"><option value="">All</option></select>
     <span class="filter-label">Sort by:</span>
@@ -325,7 +327,12 @@ select:focus,input:focus{outline:none;border-color:var(--accent);}
   </div>
 
   <div class="filter-row">
-    <span class="filter-label">Sort:</span>
+    <span class="filter-label">View:</span>
+    <div id="cust-view-toggle" style="display:inline-flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;font-family:'IBM Plex Mono',monospace;font-size:11px;">
+      <button type="button" data-view="individual" onclick="setCustView('individual')" style="padding:4px 10px;border:0;background:var(--accent);color:#fff;cursor:pointer;text-transform:uppercase;letter-spacing:0.5px;">Individual</button>
+      <button type="button" data-view="clustered" onclick="setCustView('clustered')" style="padding:4px 10px;border:0;background:#fff;color:var(--text2);cursor:pointer;text-transform:uppercase;letter-spacing:0.5px;border-left:1px solid var(--border);">Clustered</button>
+    </div>
+    <span class="filter-label" style="margin-left:8px">Sort:</span>
     <select id="cust-sort" onchange="renderCusts()"><option value="qty">Volume</option><option value="revenue">Revenue</option><option value="breadth">Breadth</option></select>
     <input type="text" class="search-box" id="cust-search" placeholder="Search customer…" oninput="renderCusts()">
     <span id="cust-count-label" style="font-size:11px;color:var(--text3);font-family:'IBM Plex Mono',monospace"></span>
@@ -445,6 +452,44 @@ let _curSC = null, _curSCData = null;
 
 const PALETTE = ["#b5622a","#4a6fa5","#2a8a72","#7a5195","#ef6c2c","#c0392b","#2a7a8a","#8a4a2a","#1a7a4a","#9a4a6a","#3a6a7a","#c0692a","#6a3d9a","#4a7a4a","#7a4a9a","#6a6a2a"];
 const SC_COLORS = {};
+
+// ══════════════════════════════════════════════════════════════
+// CLUSTER VIEW STATE + STYLE THRESHOLD HELPERS (web app addition)
+// ══════════════════════════════════════════════════════════════
+let CUST_VIEW = 'individual'; // 'individual' | 'clustered'
+
+function setCustView(view) {
+  if (view !== 'individual' && view !== 'clustered') return;
+  CUST_VIEW = view;
+  // Update button visual state
+  document.querySelectorAll('#cust-view-toggle button').forEach(btn => {
+    const active = btn.dataset.view === view;
+    btn.style.background = active ? 'var(--accent)' : '#fff';
+    btn.style.color = active ? '#fff' : 'var(--text2)';
+  });
+  // Invalidate cached analytics so renderCusts re-aggregates from raw rows
+  _FA = null;
+  renderCusts();
+}
+
+function getStyleThreshold() {
+  const el = document.getElementById('style-threshold');
+  if (!el) return 10;
+  const v = parseInt(el.value, 10);
+  return Number.isFinite(v) && v >= 0 ? v : 10;
+}
+
+function onStyleThresholdChange() {
+  // Re-render style numbers tab and update KPI counts
+  if (typeof renderSG === 'function') renderSG();
+  if (typeof renderOverview === 'function') renderOverview();
+}
+
+// Build a lookup: customer name (case-insensitive trim) -> cluster name
+function getClusterLookup() {
+  if (!D || !D.cluster_membership) return {};
+  return D.cluster_membership;
+}
 
 // ══════════════════════════════════════════════════════════════
 // CSV PARSING (browser-side)
@@ -610,10 +655,11 @@ function buildAnalytics(rows) {
     .map(([c, v]) => ({name:c, qty:v.qty, revenue:Math.round(v.rev), sc:[...v.scs], vc:v.styles.size}))
     .sort((a,b) => b.qty - a.qty);
 
-  // Style groups (qty > 10)
+  // Style groups (filter by current threshold, which defaults to 10)
+  const sgThreshold = getStyleThreshold();
   const sgRaw = {};
   for (const [sn, v] of Object.entries(styleAcc)) {
-    if (v.qty > 10 && v.sc) {
+    if (v.qty > sgThreshold && v.sc) {
       if (!sgRaw[v.sc]) sgRaw[v.sc] = [];
       sgRaw[v.sc].push({n:sn, qty:v.qty, rev:Math.round(v.rev), price:Math.round(v.price), cust:v.custs.size});
     }
@@ -805,6 +851,36 @@ function getFA() {
     styles: stA,
     monthly: Object.entries(moA).sort(([a],[b])=>a<b?-1:1).map(([mk,q])=>{const[yr,mo]=mk.split('-');return{m:`${MN[+mo-1]} ${yr.slice(2)}`,q};}),
   };
+
+  // Build clustered customers view from the same filtered raw data
+  const membership = getClusterLookup();
+  const clusterAgg = {};   // clusterName -> {qty, rev, sc:Set, st:Set, memberCount}
+  const standalones = [];
+  for (const c of _FA.customers) {
+    const clusterName = membership[c.name];
+    if (clusterName) {
+      if (!clusterAgg[clusterName]) clusterAgg[clusterName] = {qty:0, rev:0, sc:new Set(), st:new Set(), members:[]};
+      const ag = clusterAgg[clusterName];
+      ag.qty += c.qty;
+      ag.rev += c.revenue;
+      c.sc.forEach(s => ag.sc.add(s));
+      ag.members.push(c.name);
+    } else {
+      standalones.push(c);
+    }
+  }
+  // Walk raw filtered rows again to count distinct styles per cluster (accurate)
+  for (const r of rows) {
+    if (!r.c || !r.sn) continue;
+    const clusterName = membership[r.c];
+    if (clusterName && clusterAgg[clusterName]) clusterAgg[clusterName].st.add(r.sn);
+  }
+  const clusterRows = Object.entries(clusterAgg).map(([name, v]) => ({
+    name, qty: v.qty, revenue: v.rev, sc: [...v.sc], vc: v.st.size,
+    _isCluster: true, _memberCount: v.members.length, _members: v.members,
+  }));
+  _FA.clusteredCustomers = [...clusterRows, ...standalones].sort((a,b) => b.qty - a.qty);
+
   return _FA;
 }
 
@@ -864,7 +940,13 @@ function drawTrend(id, data, lc='#b5622a', fc='rgba(181,98,42,0.1)', H=180) {
 // ══════════════════════════════════════════════════════════════
 function renderOverview() {
   const fa = getFA();
-  const totalStyles = D.style_groups.reduce((s,g)=>s+g.s.length,0);
+  const threshold = getStyleThreshold();
+  // Count styles that meet the current threshold (server sends all styles now)
+  let totalStyles = 0;
+  for (const g of D.style_groups) {
+    for (const s of g.s) if (s.qty > threshold) totalStyles++;
+  }
+  const subcutCountWithStyles = D.style_groups.filter(g => g.s.some(s => s.qty > threshold)).length;
   const topStyle = D.style_groups.flatMap(g=>g.s).sort((a,b)=>b.qty-a.qty)[0];
   const isFiltered = FILTERED_RAW.length < D.raw.length;
   const dispQty = isFiltered ? fa.totalQty : D.total_qty;
@@ -873,7 +955,7 @@ function renderOverview() {
   document.getElementById('kpi-grid').innerHTML = `
     <div class="kpi-card" style="--ac:#b5622a"><div class="kpi-label">Total Revenue${filtNote}</div><div class="kpi-value">${fmt(dispRev)}</div><div class="kpi-sub">${D.total_rows.toLocaleString()} total records</div></div>
     <div class="kpi-card" style="--ac:#4a6fa5"><div class="kpi-label">Total Units${filtNote}</div><div class="kpi-value">${fN(dispQty)}</div><div class="kpi-sub">${fa.customers.length} active customers</div></div>
-    <div class="kpi-card" style="--ac:#2a8a72"><div class="kpi-label">Styles (>10 sold)</div><div class="kpi-value">${totalStyles}</div><div class="kpi-sub">Across ${D.style_groups.length} sub cut categories</div></div>
+    <div class="kpi-card" style="--ac:#2a8a72"><div class="kpi-label">Styles (&gt;${threshold} sold)</div><div class="kpi-value">${totalStyles}</div><div class="kpi-sub">Across ${subcutCountWithStyles} sub cut categories</div></div>
     <div class="kpi-card" style="--ac:#c0392b"><div class="kpi-label">Top Style #</div><div class="kpi-value">${topStyle?'#'+topStyle.n:'—'}</div><div class="kpi-sub">${topStyle?topStyle.qty+' units · '+fmt(topStyle.rev):'—'}</div></div>`;
   drawTrend('trend-svg', fa.monthly.length ? fa.monthly : D.monthly);
   const t5=fa.subcuts.slice(0,5), mr=t5[0]?.revenue||1;
@@ -905,7 +987,7 @@ function renderSubcuts() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// STYLE GROUPS  (filter-aware for qty > 10 threshold)
+// STYLE GROUPS  (filter-aware, user-configurable qty threshold)
 // ══════════════════════════════════════════════════════════════
 function renderSG() {
   const sort=document.getElementById('snsort').value;
@@ -913,10 +995,11 @@ function renderSG() {
   const fe=document.getElementById('snfilter');
   if(fe.options.length===1){D.style_groups.forEach(g=>{const o=document.createElement('option');o.value=g.sc;o.text=`${g.sc} (${g.s.length})`;fe.appendChild(o);});}
 
-  // Build style groups from filtered data
+  // Build style groups using the user-set threshold
+  const threshold = getStyleThreshold();
   const sgMap = {};
   for (const [sn, v] of Object.entries(fa.styles)) {
-    if (v.qty > 10 && v.sc) {
+    if (v.qty > threshold && v.sc) {
       if (!sgMap[v.sc]) sgMap[v.sc] = [];
       sgMap[v.sc].push({n:sn, qty:v.qty, rev:Math.round(v.rev), price:Math.round(v.price), cust:v.cu.size});
     }
@@ -926,7 +1009,7 @@ function renderSG() {
     .sort((a,b) => b.tq - a.tq);
 
   const totalQualifying = groups.reduce((s,g)=>s+g.s.length,0);
-  document.getElementById('sn-count-sub').textContent = `${totalQualifying} styles with qty > 10. Click any group to expand.`;
+  document.getElementById('sn-count-sub').textContent = `${totalQualifying} styles with qty > ${threshold}. Click any group to expand.`;
   const nMo = (fa.monthly.length||D.monthly.length||28);
 
   document.getElementById('sg-container').innerHTML=groups.map((g,gi)=>{
@@ -984,14 +1067,24 @@ function renderCusts() {
   const fa = getFA();
   const sort=document.getElementById('cust-sort').value;
   const search=document.getElementById('cust-search').value.toLowerCase();
-  let d=[...fa.customers].filter(c=>!search||c.name.toLowerCase().includes(search));
+  const source = CUST_VIEW === 'clustered' ? (fa.clusteredCustomers || fa.customers) : fa.customers;
+  let d=[...source].filter(c=>!search||c.name.toLowerCase().includes(search));
   d.sort((a,b)=>sort==='qty'?b.qty-a.qty:sort==='revenue'?b.revenue-a.revenue:b.sc.length-a.sc.length);
 
   const countEl=document.getElementById('cust-count-label');
-  if(countEl) countEl.textContent=`${d.length} customers shown`;
+  if(countEl) {
+    const label = CUST_VIEW === 'clustered' ? `${d.length} rows (clustered view)` : `${d.length} customers shown`;
+    countEl.textContent = label;
+  }
 
   window._drillMap={};
-  d.forEach(c=>{ window._drillMap[c.name]=D.drill?.[c.name]||{}; });
+  d.forEach(c=>{
+    if (c._isCluster) {
+      window._drillMap[c.name] = D.clustered_drill?.[c.name] || {};
+    } else {
+      window._drillMap[c.name] = D.drill?.[c.name] || {};
+    }
+  });
 
   function seg(c){return c.qty>1000?'<span class="badge bg">🏆 Platinum</span>':c.qty>400?'<span class="badge br">🔥 Gold</span>':c.qty>150?'<span class="badge bc">💎 Silver</span>':'<span class="badge bb">◆ Bronze</span>';}
 
@@ -1000,9 +1093,11 @@ function renderCusts() {
     const isFiltered=FILTERED_RAW.length<D.raw.length;
     const filtTag=isFiltered?'<span style="font-size:9px;color:var(--accent);margin-left:3px;font-family:IBM Plex Mono,monospace">filtered</span>':'';
     const safeName=c.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    const clusterBadge = c._isCluster ? `<span class="badge bb" style="font-size:8px;margin-left:6px;background:#f5e6d3;color:var(--accent);border:1px solid var(--accent)">⌒ ${c._memberCount}</span>` : '';
+    const displayName = c.name.length>34?c.name.slice(0,31)+'…':c.name;
     return`<tr onclick="openDrillByName('${safeName}',this)" style="cursor:pointer">
       <td>${rn(i)}</td>
-      <td style="display:flex;align-items:center;gap:6px;font-weight:500"><span style="font-size:10px;color:var(--text3)">▶</span>${c.name.length>34?c.name.slice(0,31)+'…':c.name}</td>
+      <td style="display:flex;align-items:center;gap:6px;font-weight:500"><span style="font-size:10px;color:var(--text3)">▶</span>${displayName}${clusterBadge}</td>
       <td class="num"><strong>${fN(c.qty)}</strong>${filtTag}</td>
       <td class="num">${fmt(c.revenue)}</td>
       <td class="num">₹${fN(rpu)}</td>
@@ -1016,15 +1111,30 @@ function renderCusts() {
 }
 
 // Reads drill data — uses FILTERED_RAW when a date filter is active,
-// falls back to D.drill (pre-computed all-time data) when no filter is set.
+// falls back to D.drill / D.clustered_drill (pre-computed) when no filter is set.
+// Cluster rows: aggregate across all member customers, both during filter recompute
+// and via clustered_drill fallback.
 function openDrillByName(custName, rowEl) {
   let drillData;
+
+  // Detect cluster row: D.clustered_drill has this exact name, or the row had _isCluster set.
+  // We use D.cluster_membership reverse lookup: find members whose value === custName.
+  const membership = D.cluster_membership || {};
+  const isCluster = !!(D.clustered_drill && D.clustered_drill[custName]);
+  let clusterMembers = null;
+  if (isCluster) {
+    clusterMembers = new Set(Object.entries(membership).filter(([_, v]) => v === custName).map(([k]) => k));
+  }
 
   if ((DATE_FROM || DATE_TO) && FILTERED_RAW.length > 0) {
     // Recompute from the filtered rows so sub cuts + styles match the date window
     const scAcc = {};
     for (const r of FILTERED_RAW) {
-      if (r.c !== custName || !r.sc || !r.sn) continue;
+      // For clusters: row must belong to a member. For individuals: row must match name.
+      const matches = isCluster
+        ? (clusterMembers && clusterMembers.has(r.c))
+        : (r.c === custName);
+      if (!matches || !r.sc || !r.sn) continue;
       const rev = r.q * r.p;
       if (!scAcc[r.sc]) scAcc[r.sc] = { qty:0, rev:0, styles:{} };
       scAcc[r.sc].qty += r.q;
@@ -1036,7 +1146,6 @@ function openDrillByName(custName, rowEl) {
       if (r.p > 0) st[r.sn].price = r.p;
       if (r.d) st[r.sn].dates.add(r.d);
     }
-    // Shape into the same structure openDrill expects
     drillData = {};
     for (const [sc, v] of Object.entries(scAcc)) {
       const topStyles = Object.entries(v.styles)
@@ -1049,8 +1158,8 @@ function openDrillByName(custName, rowEl) {
       drillData[sc] = { qty: v.qty, rev: Math.round(v.rev), styles: topStyles };
     }
   } else {
-    // No filter — use pre-computed all-time drill data
-    drillData = D.drill?.[custName] || {};
+    // No filter — use pre-computed drill data (cluster or individual)
+    drillData = (isCluster ? D.clustered_drill?.[custName] : D.drill?.[custName]) || {};
   }
 
   openDrill(custName, drillData, rowEl);
@@ -1397,6 +1506,14 @@ function initDashboard() {
   D.subcuts.forEach(s => scColor(s.name));
   _FA = null;
   _globalStyleMap = null;
+
+  // Initialise the style threshold input from server-provided default
+  const thInp = document.getElementById('style-threshold');
+  if (thInp && typeof D.style_threshold_default === 'number') {
+    thInp.value = D.style_threshold_default;
+  }
+  // Reset cluster view to individual on each load
+  CUST_VIEW = 'individual';
 
   document.getElementById('hdr-sub').textContent = `Dispatch & Sales Analytics · ${D.date_range}`;
   document.getElementById('hdr-meta').innerHTML = `Records: <b>${D.total_rows.toLocaleString()}</b> &nbsp;|&nbsp; Units: <b>${fN(D.total_qty)}</b> &nbsp;|&nbsp; Revenue: <b>${fmt(D.total_rev)}</b>`;
