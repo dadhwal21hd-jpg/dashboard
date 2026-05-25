@@ -42,7 +42,7 @@ function LoginInner() {
             <div className="h-10 w-10 rounded-md bg-[#b5622a]" />
             <div>
               <h1 className="text-base font-semibold text-stone-900">
-                KK Design Intelligence
+                SDWL AI LENS
               </h1>
               <p className="text-xs text-stone-500">Sales analytics dashboard</p>
             </div>

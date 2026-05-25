@@ -84,7 +84,7 @@ export default function DashboardPage() {
           <div className="h-8 w-8 rounded bg-[#b5622a]" />
           <div>
             <h1 className="text-sm font-semibold tracking-wide text-stone-900">
-              KK Design Intelligence
+              SDWL AI LENS
             </h1>
             <p className="text-[11px] text-stone-500">
               Signed in as {session?.user?.email}

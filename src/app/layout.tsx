@@ -3,8 +3,8 @@ import { Providers } from "./providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "KK Design Intelligence",
-  description: "Sales analytics dashboard for R Studio",
+  title: "SDWL AI LENS",
+  description: "Sales analytics dashboard for SDWL",
 };
 
 export default function RootLayout({
