@@ -40,10 +40,6 @@ export const CLUSTERS: ClusterDef[] = [
     ],
   },
   {
-    name: "Shakuntlam Group",
-    members: ["SHAKUNTLAM (RAJOURI)", "SHAKUNTLAM (Lajpat Nagar)"],
-  },
-  {
     name: "Ganpati Group",
     members: ["Ganpati Textiles", "Ganpati Shop"],
   },
@@ -70,6 +66,10 @@ export const CLUSTERS: ClusterDef[] = [
   {
     name: "Family",
     members: ["KOMAL MAM", "KRITI MAM", "BITTU SIR", "NITTU SIR"],
+  },
+  {
+    name: "BHOPAL GROUP",
+    members: ["ABHI BHOPAL", "TANIA DI (BHOPAL)"],
   },
 ];
 
