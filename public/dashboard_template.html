@@ -1019,7 +1019,7 @@ function renderSG() {
     const rows=sorted.map((s,i)=>{
       const pct=((s.qty/mq)*100).toFixed(0);
       const star=s.qty>=40?'<span class="badge bg" style="font-size:9px;padding:1px 5px">⭐</span>':s.qty>=25?'<span class="badge br" style="font-size:9px;padding:1px 5px">🔥</span>':'';
-      return`<tr>
+      return`<tr data-style="${s.n}">
         <td style="color:var(--text3);font-family:IBM Plex Mono,monospace;font-size:11px;padding:7px 12px;width:32px">${i+1}</td>
         <td style="padding:7px 12px"><strong style="font-family:IBM Plex Mono,monospace;color:${col}">#${s.n}</strong></td>
         <td style="padding:7px 12px"><div style="display:flex;align-items:center;gap:8px"><div style="width:100px;background:#f0ede8;height:6px;border-radius:3px"><div style="width:${pct}%;height:100%;background:${col};border-radius:3px;opacity:.75"></div></div><strong style="font-family:IBM Plex Mono,monospace;font-size:13px;color:${col};min-width:24px">${s.qty}</strong>${star}</div></td>
@@ -1051,12 +1051,36 @@ function expandAll(){document.querySelectorAll('.sg-hdr,.sg-body').forEach(el=>e
 function collapseAll(){document.querySelectorAll('.sg-hdr,.sg-body').forEach(el=>el.classList.remove('open'));}
 function filterSG(){
   const f=document.getElementById('snfilter').value;
-  const s=document.getElementById('snsearch').value.toLowerCase();
+  const s=document.getElementById('snsearch').value.trim().toLowerCase();
   document.querySelectorAll('.sg').forEach((el,i)=>{
     const sc=el.dataset.sc||'';
-    const ok=(!f||sc===f)&&(!s||sc.toLowerCase().includes(s)||el.textContent.includes(s));
-    el.style.display=ok?'':'none';
-    if(s&&ok){document.getElementById('sh-'+i)?.classList.add('open');document.getElementById('sb-'+i)?.classList.add('open');}
+    const subCutOk=(!f||sc===f);
+    if(!subCutOk){ el.style.display='none'; return; }
+
+    if(!s){
+      // No search text — show all rows in this group, restore default display
+      el.style.display='';
+      el.querySelectorAll('tbody tr').forEach(tr=>{ tr.style.display=''; });
+      return;
+    }
+
+    // Search active — show only matching rows
+    let matchCount=0;
+    el.querySelectorAll('tbody tr').forEach(tr=>{
+      const styleNo=(tr.dataset.style||'').toLowerCase();
+      const matches=styleNo.includes(s);
+      tr.style.display=matches?'':'none';
+      if(matches) matchCount++;
+    });
+
+    if(matchCount>0){
+      el.style.display='';
+      // Auto-expand groups with matches so the user sees results immediately
+      document.getElementById('sh-'+i)?.classList.add('open');
+      document.getElementById('sb-'+i)?.classList.add('open');
+    } else {
+      el.style.display='none';
+    }
   });
 }
 
