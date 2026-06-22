@@ -711,62 +711,6 @@ function buildAnalytics(rows) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// DATE FILTER
-// ══════════════════════════════════════════════════════════════
-function applyDateFilter() {
-  const f = document.getElementById('date-from').value;
-  const t = document.getElementById('date-to').value;
-  DATE_FROM = f || null;
-  DATE_TO   = t || null;
-
-  if (DATE_FROM || DATE_TO) {
-    FILTERED_RAW = D.raw.filter(r => {
-      // dt can be a JS Date object (browser CSV upload) or a YYYY-MM-DD string (Python-generated)
-      if (!r.dt) return false;
-      const rds = (r.dt instanceof Date)
-        ? `${r.dt.getFullYear()}-${String(r.dt.getMonth()+1).padStart(2,'0')}-${String(r.dt.getDate()).padStart(2,'0')}`
-        : String(r.dt).slice(0, 10);
-      if (DATE_FROM && rds < DATE_FROM) return false;
-      if (DATE_TO   && rds > DATE_TO)   return false;
-      return true;
-    });
-    const chip = document.getElementById('active-filter-chip');
-    if (chip) {
-      chip.style.display = 'inline-flex';
-      chip.className = 'date-chip';
-      chip.textContent = `📅 ${f||'start'} → ${t||'end'}  (${FILTERED_RAW.length.toLocaleString()} rows)`;
-    }
-  } else {
-    FILTERED_RAW = [...D.raw];
-    const chip = document.getElementById('active-filter-chip');
-    if (chip) chip.style.display = 'none';
-  }
-  renderCusts();
-  closeDrill();
-}
-
-function setQuick(period) {
-  const now = new Date();
-  let f = '', t = '';
-  if (period === 'all') { document.getElementById('date-from').value=''; document.getElementById('date-to').value=''; }
-  else if (period === '2024') { f='2024-01-01'; t='2024-12-31'; }
-  else if (period === '2025') { f='2025-01-01'; t='2025-12-31'; }
-  else if (period === '2026') { f='2026-01-01'; t='2026-12-31'; }
-  else if (period === 'last6') {
-    const d = new Date(); d.setMonth(d.getMonth()-6);
-    f = d.toISOString().slice(0,10); t = now.toISOString().slice(0,10);
-  } else if (period === 'last3') {
-    const d = new Date(); d.setMonth(d.getMonth()-3);
-    f = d.toISOString().slice(0,10); t = now.toISOString().slice(0,10);
-  }
-  if (period !== 'all') {
-    document.getElementById('date-from').value = f;
-    document.getElementById('date-to').value   = t;
-  }
-  applyDateFilter();
-}
-
-// ══════════════════════════════════════════════════════════════
 // GLOBAL FILTER ENGINE
 // ══════════════════════════════════════════════════════════════
 function rowDateStr(r) {
@@ -1503,17 +1447,97 @@ Write exactly 20 insights numbered 1-20. Be specific, use the actual numbers. Fo
 }
 
 // ══════════════════════════════════════════════════════════════
-// CSV EXPORTS
+// CSV EXPORTS  (all filter-aware: respect date/qty/price filters,
+// style threshold, sub-cut filter, search, and cluster view)
 // ══════════════════════════════════════════════════════════════
 function dl(content,fn){const b=new Blob([content],{type:'text/csv;charset=utf-8;'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=fn;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(u);}
-function exportAllCSV(){let c='Sub Cut,Style Number,Units Sold,Revenue (INR),MRP (INR),Customers\n';D.style_groups.forEach(g=>g.s.forEach(s=>{c+=`${g.sc},${s.n},${s.qty},${s.rev},${s.price||''},${s.cust}\n`;}));dl(c,'KK_All_Styles.csv');}
-function exportSubcutsCSV(){let c='Sub Cut,Units Sold,Revenue INR,Rev Per Unit,Customers,All Variants\n';D.subcuts.forEach(s=>{c+=`${s.name},${s.qty},${s.revenue},${Math.round(s.revenue/s.qty)},${s.customers},${s.styles}\n`;});dl(c,'KK_SubCuts.csv');}
-function exportStylesCSV(){let c='Sub Cut,Style Number,Units Sold,Revenue INR,MRP INR,Customers\n';D.style_groups.forEach(g=>g.s.forEach(s=>{c+=`${g.sc},${s.n},${s.qty},${s.rev},${s.price||''},${s.cust}\n`;}));dl(c,'KK_Styles.csv');}
+
+// Escape a cell for CSV: wrap in quotes if it contains comma/quote/newline
+function csvCell(v){
+  const s = String(v ?? '');
+  if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
+  return s;
+}
+
+// Filename suffix indicating active filters
+function exportTag(){
+  const isFiltered = FILTERED_RAW.length < D.raw.length;
+  if (!isFiltered) return '';
+  const f = DATE_FROM ? DATE_FROM.replace(/-/g,'') : 'start';
+  const t = DATE_TO   ? DATE_TO.replace(/-/g,'')   : 'end';
+  return `_${f}_to_${t}`;
+}
+
+// Rebuild style groups from currently filtered data with the user's threshold
+function exportBuildStyleGroups(){
+  const fa = getFA();
+  const threshold = getStyleThreshold();
+  const groups = {};
+  for (const [sn,v] of Object.entries(fa.styles)) {
+    if (v.qty > threshold && v.sc) {
+      if (!groups[v.sc]) groups[v.sc] = [];
+      groups[v.sc].push({n:sn, qty:v.qty, rev:Math.round(v.rev), price:Math.round(v.price), cust:v.cu.size});
+    }
+  }
+  return Object.entries(groups)
+    .map(([sc, styles]) => ({sc, s: styles.sort((a,b)=>b.qty-a.qty)}))
+    .sort((a,b) => b.s.reduce((s,x)=>s+x.qty,0) - a.s.reduce((s,x)=>s+x.qty,0));
+}
+
+function exportAllCSV(){
+  const tag = exportTag();
+  const threshold = getStyleThreshold();
+  let c = 'Sub Cut,Style Number,Units Sold,Revenue (INR),MRP (INR),Customers\n';
+  exportBuildStyleGroups().forEach(g => g.s.forEach(s => {
+    c += `${csvCell(g.sc)},${csvCell(s.n)},${s.qty},${s.rev},${s.price||''},${s.cust}\n`;
+  }));
+  dl(c, `Styles_min${threshold}${tag}.csv`);
+}
+
+function exportSubcutsCSV(){
+  const fa = getFA();
+  const tag = exportTag();
+  let c = 'Sub Cut,Units Sold,Revenue INR,Rev Per Unit,Customers,Style Variants\n';
+  fa.subcuts.forEach(s => {
+    const rpu = s.qty > 0 ? Math.round(s.revenue / s.qty) : 0;
+    c += `${csvCell(s.name)},${s.qty},${s.revenue},${rpu},${s.customers},${s.styles}\n`;
+  });
+  dl(c, `SubCuts${tag}.csv`);
+}
+
+function exportStylesCSV(){
+  const tag = exportTag();
+  const threshold = getStyleThreshold();
+  const scFilter = document.getElementById('snfilter').value || '';
+  const search   = document.getElementById('snsearch').value.trim().toLowerCase();
+
+  let c = 'Sub Cut,Style Number,Units Sold,Revenue INR,MRP INR,Customers\n';
+  exportBuildStyleGroups().forEach(g => {
+    if (scFilter && g.sc !== scFilter) return;
+    g.s.forEach(s => {
+      if (search && !String(s.n).toLowerCase().includes(search)) return;
+      c += `${csvCell(g.sc)},${csvCell(s.n)},${s.qty},${s.rev},${s.price||''},${s.cust}\n`;
+    });
+  });
+  dl(c, `Styles_min${threshold}${tag}.csv`);
+}
+
 function exportCustomersCSV(){
-  const {customers} = buildFilteredAnalytics();
-  let c='Customer,Units,Revenue INR,Rev Per Unit,Sub Cuts,Style Variants,Segment\n';
-  customers.forEach(x=>{const seg=x.qty>1000?'Platinum':x.qty>400?'Gold':x.qty>150?'Silver':'Bronze';c+=`"${x.name}",${x.qty},${x.revenue},${Math.round(x.revenue/x.qty)},${x.sc.length},${x.vc},${seg}\n`;});
-  dl(c,'KK_Customers.csv');
+  const fa = getFA();
+  const tag = exportTag();
+  const search = document.getElementById('cust-search').value.trim().toLowerCase();
+  const source = CUST_VIEW === 'clustered' ? (fa.clusteredCustomers || fa.customers) : fa.customers;
+  const viewTag = CUST_VIEW === 'clustered' ? '_clustered' : '';
+
+  let c = 'Customer,Units,Revenue INR,Rev Per Unit,Sub Cuts,Style Variants,Segment,Type\n';
+  source.forEach(x => {
+    if (search && !x.name.toLowerCase().includes(search)) return;
+    const seg = x.qty > 1000 ? 'Platinum' : x.qty > 400 ? 'Gold' : x.qty > 150 ? 'Silver' : 'Bronze';
+    const type = x._isCluster ? `Cluster (${x._memberCount})` : 'Individual';
+    const rpu = x.qty > 0 ? Math.round(x.revenue / x.qty) : 0;
+    c += `${csvCell(x.name)},${x.qty},${x.revenue},${rpu},${x.sc.length},${x.vc},${seg},${csvCell(type)}\n`;
+  });
+  dl(c, `Customers${viewTag}${tag}.csv`);
 }
 
 // ══════════════════════════════════════════════════════════════
