@@ -267,6 +267,18 @@ body.locked .header-right > button:not(.lock-btn){
   display:none !important;
 }
 
+/* Customer-mode: bring back column headers in the Customers tab only
+   so the revealed customer's numbers have labels */
+body.customer-mode #tab-customers .data-table th:nth-child(3),
+body.customer-mode #tab-customers .data-table th:nth-child(4),
+body.customer-mode #tab-customers .data-table th:nth-child(5),
+body.customer-mode #tab-customers .data-table th:nth-child(6),
+body.customer-mode #tab-customers .data-table th:nth-child(7),
+body.customer-mode #tab-customers .data-table th:nth-child(8),
+body.customer-mode #tab-customers .data-table th:nth-child(9){
+  display:table-cell !important;
+}
+
 /* In customer-mode (one customer revealed) — drill panel re-enabled */
 body.customer-mode .lock-btn,
 body.customer-mode #cust-tbody{
@@ -364,7 +376,23 @@ body.customer-mode tr.cust-revealed{
   box-shadow:inset 3px 0 0 #5cffaa;
 }
 body.customer-mode tr.cust-revealed td{
-  color:#1a1814;
+  color:#1a1814 !important;
+  display:table-cell !important;
+  background:transparent !important;
+  font-size:12.5px !important;
+}
+body.customer-mode tr.cust-revealed td.num,
+body.customer-mode tr.cust-revealed td:nth-child(3),
+body.customer-mode tr.cust-revealed td:nth-child(4),
+body.customer-mode tr.cust-revealed td:nth-child(5),
+body.customer-mode tr.cust-revealed td:nth-child(6),
+body.customer-mode tr.cust-revealed td:nth-child(7),
+body.customer-mode tr.cust-revealed td:nth-child(8),
+body.customer-mode tr.cust-revealed td:nth-child(9){
+  display:table-cell !important;
+  color:#1a1814 !important;
+  background:transparent !important;
+  font-size:12.5px !important;
 }
 body.customer-mode tr.cust-revealed::before{
   content:'● UNLOCKED';
