@@ -46,6 +46,11 @@ export async function GET(req: NextRequest) {
       _fetched_at: new Date(fetchedAt).toISOString(),
       _from_cache: fromCache,
       _user: session.user.email,
+      // Lock codes — injected into client-side DATA for the sci-fi lock UI.
+      // NOTE: This is a VISUAL lock only. The data itself is on the client.
+      // A technical user opening dev tools could read these codes.
+      _master_code:   process.env.MASTER_UNLOCK_CODE   || "",
+      _customer_code: process.env.CUSTOMER_UNLOCK_CODE || "",
     };
 
     const injected = template.replace(

@@ -162,6 +162,394 @@ select:focus,input:focus{outline:none;border-color:var(--accent);}
 .spinner{width:36px;height:36px;border:3px solid #e2ddd6;border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg);}}
 @media(max-width:900px){.kpi-grid{grid-template-columns:1fr 1fr;}.cards-grid,.cl-grid,.ins-grid{grid-template-columns:1fr;}main,.header,.nav{padding-left:14px;padding-right:14px;}}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/* SCI-FI LOCK SYSTEM                                                  */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+/* Lock button in header — glows when locked */
+.lock-btn{
+  position:relative;
+  background:linear-gradient(135deg,#0a0e1a 0%,#1a2138 100%);
+  color:#5cf2ff;
+  border:1px solid #2a4a6a;
+  border-radius:7px;
+  padding:7px 14px;
+  font-family:'IBM Plex Mono',monospace;
+  font-size:11px;
+  font-weight:600;
+  letter-spacing:1.5px;
+  text-transform:uppercase;
+  cursor:pointer;
+  overflow:hidden;
+  transition:all .25s;
+  box-shadow:0 0 8px rgba(92,242,255,.15),inset 0 0 10px rgba(92,242,255,.08);
+}
+.lock-btn:hover{
+  border-color:#5cf2ff;
+  color:#fff;
+  box-shadow:0 0 16px rgba(92,242,255,.5),inset 0 0 14px rgba(92,242,255,.2);
+  transform:translateY(-1px);
+}
+.lock-btn.locked{
+  background:linear-gradient(135deg,#1a0a0e 0%,#3a1525 100%);
+  color:#ff5c8a;
+  border-color:#6a2a3a;
+  box-shadow:0 0 10px rgba(255,92,138,.3),inset 0 0 12px rgba(255,92,138,.1);
+  animation:lockPulse 2.4s ease-in-out infinite;
+}
+.lock-btn.locked:hover{
+  border-color:#ff5c8a;
+  color:#fff;
+  box-shadow:0 0 22px rgba(255,92,138,.6),inset 0 0 18px rgba(255,92,138,.25);
+}
+.lock-btn .lock-icon{
+  display:inline-block;
+  margin-right:4px;
+  font-size:13px;
+  filter:drop-shadow(0 0 4px currentColor);
+}
+@keyframes lockPulse{
+  0%,100%{box-shadow:0 0 10px rgba(255,92,138,.3),inset 0 0 12px rgba(255,92,138,.1);}
+  50%   {box-shadow:0 0 18px rgba(255,92,138,.55),inset 0 0 16px rgba(255,92,138,.25);}
+}
+.lock-btn.customer-mode{
+  background:linear-gradient(135deg,#0a1a14 0%,#15382a 100%);
+  color:#5cffaa;
+  border-color:#2a6a4a;
+  box-shadow:0 0 10px rgba(92,255,170,.3),inset 0 0 12px rgba(92,255,170,.1);
+  animation:custPulse 3s ease-in-out infinite;
+}
+@keyframes custPulse{
+  0%,100%{box-shadow:0 0 10px rgba(92,255,170,.3),inset 0 0 12px rgba(92,255,170,.1);}
+  50%   {box-shadow:0 0 18px rgba(92,255,170,.5),inset 0 0 16px rgba(92,255,170,.22);}
+}
+
+/* Locked mode — hide everything except names + ranks */
+body.locked .kpi-value,
+body.locked .kpi-sub,
+body.locked .trend-chart,
+body.locked .bar-track,
+body.locked .bar-val,
+body.locked #ov-cust .bar-name,
+body.locked #ov-sc,
+body.locked #ov-rpu,
+body.locked #sc-tbody td:not(:first-child):not(:nth-child(2)),
+body.locked #sg-container,
+body.locked #cust-tbody td:nth-child(3),
+body.locked #cust-tbody td:nth-child(4),
+body.locked #cust-tbody td:nth-child(5),
+body.locked #cust-tbody td:nth-child(6),
+body.locked #cust-tbody td:nth-child(7),
+body.locked #cust-tbody td:nth-child(8),
+body.locked #cust-tbody td:nth-child(9),
+body.locked .data-table th:nth-child(3),
+body.locked .data-table th:nth-child(4),
+body.locked .data-table th:nth-child(5),
+body.locked .data-table th:nth-child(6),
+body.locked .data-table th:nth-child(7),
+body.locked .data-table th:nth-child(8),
+body.locked .data-table th:nth-child(9),
+body.locked #drill-panel,
+body.locked #cl-grid,
+body.locked #hm-container,
+body.locked #ins-grid,
+body.locked #cs-tbody,
+body.locked .card-title,
+body.locked #ai-panel,
+body.locked #api-key-setup,
+body.locked #hdr-meta,
+body.locked #global-filter-bar,
+body.locked .filter-row,
+body.locked .sec-hdr button,
+body.locked .header-right > .btn-primary,
+body.locked .header-right > button:not(.lock-btn){
+  display:none !important;
+}
+
+/* In customer-mode (one customer revealed) — drill panel re-enabled */
+body.customer-mode .lock-btn,
+body.customer-mode #cust-tbody{
+  display:revert;
+}
+body.customer-mode .kpi-value,
+body.customer-mode #drill-panel,
+body.customer-mode .header-right > .btn-primary{
+  display:revert;
+}
+
+/* Replace hidden numbers with redacted stripes for cells we keep visible */
+body.locked .data-table th:first-child{
+  color:#5cf2ff;
+}
+body.locked .kpi-card{
+  position:relative;
+  min-height:80px;
+  background:linear-gradient(135deg,#0a0e1a 0%,#1a2138 100%);
+  border-color:#2a4a6a;
+}
+body.locked .kpi-card::after{
+  content:'▓▓▓▓ CLASSIFIED ▓▓▓▓';
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-family:'IBM Plex Mono',monospace;
+  font-size:11px;
+  font-weight:700;
+  color:#5cf2ff;
+  letter-spacing:3px;
+  text-shadow:0 0 8px rgba(92,242,255,.6);
+  animation:scan 3s linear infinite;
+  background:repeating-linear-gradient(0deg,transparent 0,transparent 2px,rgba(92,242,255,.04) 2px,rgba(92,242,255,.04) 4px);
+}
+body.locked .kpi-card .kpi-label{
+  color:#5cf2ff;
+  position:relative;
+  z-index:2;
+}
+@keyframes scan{
+  0%{background-position:0 0;}
+  100%{background-position:0 -40px;}
+}
+
+/* Locked customer-table row: numeric cells we kept (the first two) glow */
+body.locked #cust-tbody td:first-child,
+body.locked #cust-tbody td:nth-child(2){
+  background:linear-gradient(90deg,rgba(92,242,255,.04),transparent);
+}
+body.locked #cust-tbody tr{
+  position:relative;
+}
+body.locked #cust-tbody tr::after{
+  content:'';
+  position:absolute;
+  right:14px;
+  top:50%;
+  transform:translateY(-50%);
+  width:11px;height:11px;
+  border-radius:50%;
+  background:radial-gradient(circle,#ff5c8a 30%,transparent 70%);
+  box-shadow:0 0 6px #ff5c8a;
+  opacity:.6;
+  animation:dotBlink 1.6s ease-in-out infinite;
+}
+body.locked #cust-tbody tr:hover{
+  background:linear-gradient(90deg,rgba(92,242,255,.08),transparent);
+  cursor:pointer;
+}
+body.locked #cust-tbody tr:hover::after{
+  background:radial-gradient(circle,#5cf2ff 30%,transparent 70%);
+  box-shadow:0 0 10px #5cf2ff;
+  opacity:1;
+}
+@keyframes dotBlink{
+  0%,100%{opacity:.4;}
+  50%   {opacity:.9;}
+}
+
+/* Customer-unlock mode: keep numbers for the chosen one, redact others */
+body.customer-mode tr.cust-redacted td:nth-child(3),
+body.customer-mode tr.cust-redacted td:nth-child(4),
+body.customer-mode tr.cust-redacted td:nth-child(5),
+body.customer-mode tr.cust-redacted td:nth-child(6),
+body.customer-mode tr.cust-redacted td:nth-child(7){
+  color:transparent !important;
+  background:repeating-linear-gradient(90deg,#2a2f3a,#2a2f3a 4px,#1a1f28 4px,#1a1f28 8px) !important;
+  font-size:0 !important;
+}
+body.customer-mode tr.cust-revealed{
+  background:linear-gradient(90deg,rgba(92,255,170,.10),rgba(92,255,170,.02)) !important;
+  box-shadow:inset 3px 0 0 #5cffaa;
+}
+body.customer-mode tr.cust-revealed td{
+  color:#1a1814;
+}
+body.customer-mode tr.cust-revealed::before{
+  content:'● UNLOCKED';
+  position:absolute;
+  left:-2px;top:50%;
+  transform:translateY(-50%) rotate(0deg);
+  font-family:'IBM Plex Mono',monospace;
+  font-size:8px;
+  color:#5cffaa;
+  letter-spacing:1px;
+  text-shadow:0 0 4px #5cffaa;
+  padding:2px 6px;
+}
+
+/* ──────── LOCK / UNLOCK MODAL ──────── */
+.lock-modal-backdrop{
+  position:fixed;inset:0;
+  background:radial-gradient(circle at 50% 50%,rgba(10,14,26,.92),rgba(0,0,0,.98));
+  z-index:9999;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  backdrop-filter:blur(8px);
+  animation:fadeIn .3s ease-out;
+}
+.lock-modal-backdrop.show{display:flex;}
+.lock-modal-backdrop::before{
+  content:'';
+  position:absolute;inset:0;
+  background:
+    repeating-linear-gradient(0deg,transparent 0,transparent 3px,rgba(92,242,255,.03) 3px,rgba(92,242,255,.03) 4px),
+    repeating-linear-gradient(90deg,transparent 0,transparent 80px,rgba(92,242,255,.04) 80px,rgba(92,242,255,.04) 81px);
+  pointer-events:none;
+  animation:scan 4s linear infinite;
+}
+.lock-modal{
+  position:relative;
+  background:linear-gradient(135deg,#0a0e1a 0%,#1a2138 100%);
+  border:1px solid #2a4a6a;
+  border-radius:10px;
+  padding:36px 44px;
+  min-width:420px;
+  max-width:90vw;
+  box-shadow:
+    0 0 40px rgba(92,242,255,.25),
+    inset 0 0 30px rgba(92,242,255,.05),
+    0 0 100px rgba(0,0,0,.6);
+  animation:modalIn .4s cubic-bezier(.2,.9,.3,1.2);
+}
+.lock-modal::before,.lock-modal::after{
+  content:'';
+  position:absolute;
+  width:20px;height:20px;
+  border:2px solid #5cf2ff;
+  filter:drop-shadow(0 0 6px #5cf2ff);
+}
+.lock-modal::before{top:-2px;left:-2px;border-right:none;border-bottom:none;}
+.lock-modal::after{bottom:-2px;right:-2px;border-left:none;border-top:none;}
+.lock-modal-title{
+  font-family:'IBM Plex Mono',monospace;
+  font-size:11px;
+  color:#5cf2ff;
+  letter-spacing:3px;
+  margin-bottom:6px;
+  text-shadow:0 0 8px rgba(92,242,255,.7);
+}
+.lock-modal-sub{
+  font-family:'Syne',sans-serif;
+  font-size:22px;
+  font-weight:800;
+  color:#fff;
+  margin-bottom:24px;
+  letter-spacing:.5px;
+}
+.lock-modal-sub .target{
+  color:#5cffaa;
+  text-shadow:0 0 8px rgba(92,255,170,.6);
+}
+.lock-input{
+  width:100%;
+  background:rgba(0,0,0,.5);
+  border:1px solid #2a4a6a;
+  border-radius:6px;
+  padding:14px 18px;
+  color:#fff;
+  font-family:'IBM Plex Mono',monospace;
+  font-size:18px;
+  letter-spacing:8px;
+  text-align:center;
+  outline:none;
+  transition:all .2s;
+  box-shadow:inset 0 0 12px rgba(92,242,255,.08);
+}
+.lock-input:focus{
+  border-color:#5cf2ff;
+  box-shadow:0 0 14px rgba(92,242,255,.3),inset 0 0 16px rgba(92,242,255,.15);
+}
+.lock-input.error{
+  border-color:#ff3a5a;
+  box-shadow:0 0 16px rgba(255,58,90,.5);
+  animation:shake .4s;
+}
+@keyframes shake{
+  0%,100%{transform:translateX(0);}
+  25%{transform:translateX(-8px);}
+  75%{transform:translateX(8px);}
+}
+.lock-modal-msg{
+  font-family:'IBM Plex Mono',monospace;
+  font-size:11px;
+  color:#9ca5b8;
+  margin-top:14px;
+  text-align:center;
+  min-height:14px;
+  letter-spacing:1px;
+}
+.lock-modal-msg.error{color:#ff5c7a;text-shadow:0 0 4px rgba(255,58,90,.5);}
+.lock-modal-actions{
+  display:flex;
+  gap:10px;
+  margin-top:20px;
+  justify-content:flex-end;
+}
+.lock-modal-btn{
+  background:transparent;
+  border:1px solid #2a4a6a;
+  color:#9ca5b8;
+  font-family:'IBM Plex Mono',monospace;
+  font-size:11px;
+  letter-spacing:2px;
+  padding:9px 18px;
+  border-radius:5px;
+  cursor:pointer;
+  text-transform:uppercase;
+  transition:all .2s;
+}
+.lock-modal-btn:hover{
+  border-color:#5cf2ff;
+  color:#5cf2ff;
+  box-shadow:0 0 10px rgba(92,242,255,.3);
+}
+.lock-modal-btn.primary{
+  background:linear-gradient(135deg,#1a4a6a,#2a6a8a);
+  border-color:#5cf2ff;
+  color:#fff;
+}
+.lock-modal-btn.primary:hover{
+  background:linear-gradient(135deg,#2a6a8a,#3a8aaa);
+  box-shadow:0 0 18px rgba(92,242,255,.5);
+}
+
+@keyframes modalIn{
+  from{opacity:0;transform:scale(.85) translateY(20px);}
+  to  {opacity:1;transform:scale(1) translateY(0);}
+}
+@keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+
+/* Success flash overlay */
+.unlock-flash{
+  position:fixed;inset:0;
+  background:radial-gradient(circle,rgba(92,255,170,.4),transparent 70%);
+  pointer-events:none;
+  z-index:10000;
+  opacity:0;
+}
+.unlock-flash.fire{animation:flashOut .8s ease-out;}
+@keyframes flashOut{
+  0%  {opacity:0;}
+  20% {opacity:1;}
+  100%{opacity:0;}
+}
+
+/* Boot-up sequence text */
+.lock-boot{
+  font-family:'IBM Plex Mono',monospace;
+  font-size:10px;
+  color:#5cf2ff;
+  margin-top:10px;
+  line-height:1.8;
+  letter-spacing:1px;
+  opacity:.7;
+  min-height:36px;
+}
+.lock-boot .ok{color:#5cffaa;}
+
 </style>
 </head>
 <body>
@@ -214,6 +602,9 @@ select:focus,input:focus{outline:none;border-color:var(--accent);}
   </div>
   <div class="header-right">
     <div class="header-meta" id="hdr-meta"></div>
+    <button class="lock-btn locked" id="lock-btn" onclick="onLockBtnClick()" title="Click to unlock">
+      <span class="lock-icon">🔒</span><span id="lock-btn-label">LOCKED</span>
+    </button>
     <button class="btn btn-outline btn-sm" onclick="resetApp()">↩ Load New CSV</button>
     <button class="btn btn-primary btn-sm" onclick="exportAllCSV()">⬇ Export All (CSV)</button>
   </div>
@@ -433,6 +824,25 @@ select:focus,input:focus{outline:none;border-color:var(--accent);}
 </div>
 
 </main>
+
+<!-- ══════════════════════════ SCI-FI LOCK SYSTEM ══════════════════════════ -->
+<div class="lock-modal-backdrop" id="lock-modal">
+  <div class="lock-modal">
+    <div class="lock-modal-title" id="lock-modal-title">▸ SECURE ACCESS REQUIRED</div>
+    <div class="lock-modal-sub" id="lock-modal-sub">Enter authorisation code</div>
+    <input type="password" class="lock-input" id="lock-input" maxlength="32" autocomplete="off"
+           onkeydown="if(event.key==='Enter')submitLockCode();else clearLockError();"
+           placeholder="● ● ● ● ● ●">
+    <div class="lock-modal-msg" id="lock-modal-msg">Awaiting input…</div>
+    <div class="lock-boot" id="lock-boot"></div>
+    <div class="lock-modal-actions">
+      <button class="lock-modal-btn" onclick="closeLockModal()">CANCEL</button>
+      <button class="lock-modal-btn primary" onclick="submitLockCode()">AUTHORISE ▸</button>
+    </div>
+  </div>
+</div>
+<div class="unlock-flash" id="unlock-flash"></div>
+
 </div><!-- /app -->
 
 <script>
@@ -489,6 +899,184 @@ function onStyleThresholdChange() {
 function getClusterLookup() {
   if (!D || !D.cluster_membership) return {};
   return D.cluster_membership;
+}
+
+// ══════════════════════════════════════════════════════════════
+// SCI-FI LOCK SYSTEM
+// State: LOCK_MODE = 'locked' | 'unlocked' | 'customer'
+// In 'customer' mode, UNLOCKED_CUSTOMER holds the revealed name.
+// ══════════════════════════════════════════════════════════════
+let LOCK_MODE = 'locked';
+let UNLOCKED_CUSTOMER = null;
+let _pendingCustClick = null; // customer name awaiting unlock decision
+
+function getMasterCode()   { return (D && D._master_code)   || ''; }
+function getCustomerCode() { return (D && D._customer_code) || ''; }
+
+function applyLockState() {
+  const body = document.body;
+  body.classList.remove('locked','customer-mode');
+  const btn = document.getElementById('lock-btn');
+  const lbl = document.getElementById('lock-btn-label');
+  if (!btn) return;
+  btn.classList.remove('locked','customer-mode');
+
+  if (LOCK_MODE === 'locked') {
+    body.classList.add('locked');
+    btn.classList.add('locked');
+    btn.querySelector('.lock-icon').textContent = '🔒';
+    lbl.textContent = 'LOCKED';
+    btn.title = 'Click to enter access code';
+  } else if (LOCK_MODE === 'customer') {
+    body.classList.add('locked','customer-mode');
+    btn.classList.add('customer-mode');
+    btn.querySelector('.lock-icon').textContent = '◉';
+    lbl.textContent = UNLOCKED_CUSTOMER ? (UNLOCKED_CUSTOMER.length > 14 ? UNLOCKED_CUSTOMER.slice(0,12)+'…' : UNLOCKED_CUSTOMER).toUpperCase() : 'CUSTOMER';
+    btn.title = `Showing ${UNLOCKED_CUSTOMER} only — click to lock`;
+  } else {
+    btn.querySelector('.lock-icon').textContent = '🔓';
+    lbl.textContent = 'UNLOCKED';
+    btn.title = 'Click to lock the dashboard';
+  }
+  // Re-render customer table so cust-redacted/cust-revealed classes update
+  if (D) renderCusts();
+}
+
+function onLockBtnClick() {
+  if (LOCK_MODE === 'unlocked') {
+    // Re-lock everything
+    LOCK_MODE = 'locked';
+    UNLOCKED_CUSTOMER = null;
+    applyLockState();
+    return;
+  }
+  if (LOCK_MODE === 'customer') {
+    // Customer mode — clicking lock button re-locks fully
+    LOCK_MODE = 'locked';
+    UNLOCKED_CUSTOMER = null;
+    applyLockState();
+    return;
+  }
+  // Locked → prompt for MASTER code
+  openLockModal({
+    mode: 'master',
+    title: '▸ MASTER ACCESS REQUIRED',
+    sub:   'Enter master authorisation code',
+  });
+}
+
+function openLockModal(opts) {
+  const modal = document.getElementById('lock-modal');
+  document.getElementById('lock-modal-title').textContent = opts.title;
+  document.getElementById('lock-modal-sub').innerHTML = opts.sub;
+  document.getElementById('lock-input').value = '';
+  document.getElementById('lock-input').classList.remove('error');
+  document.getElementById('lock-modal-msg').textContent = 'Awaiting input…';
+  document.getElementById('lock-modal-msg').classList.remove('error');
+  document.getElementById('lock-boot').innerHTML = '';
+  modal.dataset.mode = opts.mode; // 'master' or 'customer'
+  modal.classList.add('show');
+  setTimeout(() => document.getElementById('lock-input').focus(), 100);
+}
+
+function closeLockModal() {
+  document.getElementById('lock-modal').classList.remove('show');
+  _pendingCustClick = null;
+}
+
+function clearLockError() {
+  const inp = document.getElementById('lock-input');
+  const msg = document.getElementById('lock-modal-msg');
+  if (inp.classList.contains('error')) {
+    inp.classList.remove('error');
+    msg.classList.remove('error');
+    msg.textContent = 'Awaiting input…';
+  }
+}
+
+function submitLockCode() {
+  const modal = document.getElementById('lock-modal');
+  const mode = modal.dataset.mode;
+  const code = document.getElementById('lock-input').value.trim();
+  const inp = document.getElementById('lock-input');
+  const msg = document.getElementById('lock-modal-msg');
+  const boot = document.getElementById('lock-boot');
+
+  if (!code) {
+    msg.textContent = 'NO CODE ENTERED'; msg.classList.add('error');
+    inp.classList.add('error');
+    return;
+  }
+
+  const expected = mode === 'master' ? getMasterCode() : getCustomerCode();
+  if (!expected) {
+    msg.textContent = 'SYSTEM ERROR: no code configured';
+    msg.classList.add('error');
+    return;
+  }
+
+  if (code !== expected) {
+    msg.textContent = '✕ ACCESS DENIED — INVALID CODE';
+    msg.classList.add('error');
+    inp.classList.add('error');
+    inp.value = '';
+    return;
+  }
+
+  // SUCCESS — sci-fi boot sequence then unlock
+  msg.textContent = '✓ CODE ACCEPTED';
+  msg.classList.remove('error');
+  msg.style.color = '#5cffaa';
+  msg.style.textShadow = '0 0 6px rgba(92,255,170,.6)';
+  inp.disabled = true;
+
+  const lines = mode === 'master'
+    ? ['▸ Verifying credentials...','▸ Loading classified data...','✓ FULL ACCESS GRANTED']
+    : ['▸ Verifying customer code...',`▸ Decrypting ${_pendingCustClick||'record'}...`,'✓ CUSTOMER VIEW UNLOCKED'];
+
+  let i = 0;
+  boot.innerHTML = '';
+  const tick = () => {
+    if (i >= lines.length) {
+      // Finalise
+      const flash = document.getElementById('unlock-flash');
+      flash.classList.remove('fire');
+      void flash.offsetWidth; // restart animation
+      flash.classList.add('fire');
+      setTimeout(() => {
+        closeLockModal();
+        inp.disabled = false;
+        msg.style.color = '';
+        msg.style.textShadow = '';
+        if (mode === 'master') {
+          LOCK_MODE = 'unlocked';
+          UNLOCKED_CUSTOMER = null;
+        } else {
+          LOCK_MODE = 'customer';
+          UNLOCKED_CUSTOMER = _pendingCustClick;
+          _pendingCustClick = null;
+        }
+        applyLockState();
+      }, 600);
+      return;
+    }
+    const ln = lines[i];
+    const isOk = ln.startsWith('✓');
+    boot.innerHTML += `<div class="${isOk?'ok':''}">${ln}</div>`;
+    i++;
+    setTimeout(tick, isOk ? 200 : 350);
+  };
+  setTimeout(tick, 120);
+}
+
+// Called when a customer row is clicked while in 'locked' mode
+function requestCustomerUnlock(custName) {
+  _pendingCustClick = custName;
+  openLockModal({
+    mode: 'customer',
+    title: '▸ CUSTOMER ACCESS REQUEST',
+    sub:   `Reveal data for <span class="target">${custName}</span>?`,
+  });
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1063,7 +1651,12 @@ function renderCusts() {
     const safeName=c.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
     const clusterBadge = c._isCluster ? `<span class="badge bb" style="font-size:8px;margin-left:6px;background:#f5e6d3;color:var(--accent);border:1px solid var(--accent)">⌒ ${c._memberCount}</span>` : '';
     const displayName = c.name.length>34?c.name.slice(0,31)+'…':c.name;
-    return`<tr onclick="openDrillByName('${safeName}',this)" style="cursor:pointer">
+    // Lock-aware row class: redacted (other customers in customer-mode), revealed (the unlocked one)
+    let rowCls = '';
+    if (LOCK_MODE === 'customer') {
+      rowCls = (c.name === UNLOCKED_CUSTOMER) ? 'cust-revealed' : 'cust-redacted';
+    }
+    return`<tr class="${rowCls}" onclick="handleCustClick('${safeName}',this)" style="cursor:pointer">
       <td>${rn(i)}</td>
       <td style="display:flex;align-items:center;gap:6px;font-weight:500"><span style="font-size:10px;color:var(--text3)">▶</span>${displayName}${clusterBadge}</td>
       <td class="num"><strong>${fN(c.qty)}</strong>${filtTag}</td>
@@ -1076,6 +1669,21 @@ function renderCusts() {
     </tr>`;
   }).join('');
   closeDrill();
+}
+
+// Lock-aware dispatcher: in locked mode → request customer unlock;
+// in customer mode → only the unlocked customer can drill; in unlocked mode → normal drill.
+function handleCustClick(custName, rowEl) {
+  if (LOCK_MODE === 'locked') {
+    requestCustomerUnlock(custName);
+    return;
+  }
+  if (LOCK_MODE === 'customer' && custName !== UNLOCKED_CUSTOMER) {
+    // Other customers stay redacted; clicking them prompts re-unlock for this one
+    requestCustomerUnlock(custName);
+    return;
+  }
+  openDrillByName(custName, rowEl);
 }
 
 // Reads drill data — uses FILTERED_RAW when a date filter is active,
@@ -1563,6 +2171,10 @@ function initDashboard() {
   // Reset cluster view to individual on each load
   CUST_VIEW = 'individual';
 
+  // Lock system: always start locked on every load (security default)
+  LOCK_MODE = 'locked';
+  UNLOCKED_CUSTOMER = null;
+
   document.getElementById('hdr-sub').textContent = `Dispatch & Sales Analytics · ${D.date_range}`;
   document.getElementById('hdr-meta').innerHTML = `Records: <b>${D.total_rows.toLocaleString()}</b> &nbsp;|&nbsp; Units: <b>${fN(D.total_qty)}</b> &nbsp;|&nbsp; Revenue: <b>${fmt(D.total_rev)}</b>`;
 
@@ -1570,6 +2182,7 @@ function initDashboard() {
   document.getElementById('app').style.display = 'block';
 
   renderAll();
+  applyLockState();   // apply locked CSS class and button state
   showLoading(false);
 }
 
