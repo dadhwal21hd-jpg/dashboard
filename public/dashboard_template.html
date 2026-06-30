@@ -250,7 +250,6 @@ body.locked .data-table th:nth-child(6),
 body.locked .data-table th:nth-child(7),
 body.locked .data-table th:nth-child(8),
 body.locked .data-table th:nth-child(9),
-body.locked #drill-panel,
 body.locked #cl-grid,
 body.locked #hm-container,
 body.locked #ins-grid,
@@ -264,6 +263,14 @@ body.locked .filter-row,
 body.locked .sec-hdr button,
 body.locked .header-right > .btn-primary,
 body.locked .header-right > button:not(.lock-btn){
+  display:none !important;
+}
+
+/* Pure locked mode hides the drill panel; in customer-mode the revealed
+   customer can still drill, so the panel's open/close is left to the JS
+   inline display toggle (same as unlocked mode). Scoping with
+   :not(.customer-mode) avoids the !important hide overriding that inline style. */
+body.locked:not(.customer-mode) #drill-panel{
   display:none !important;
 }
 
@@ -285,7 +292,6 @@ body.customer-mode #cust-tbody{
   display:revert;
 }
 body.customer-mode .kpi-value,
-body.customer-mode #drill-panel,
 body.customer-mode .header-right > .btn-primary{
   display:revert;
 }
