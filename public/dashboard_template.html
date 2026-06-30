@@ -1038,24 +1038,24 @@ function submitLockCode() {
   boot.innerHTML = '';
   const tick = () => {
     if (i >= lines.length) {
-      // Finalise
+      // Finalise — capture pending customer BEFORE closing modal (which clears _pendingCustClick)
+      const capturedCust = _pendingCustClick;
       const flash = document.getElementById('unlock-flash');
       flash.classList.remove('fire');
       void flash.offsetWidth; // restart animation
       flash.classList.add('fire');
       setTimeout(() => {
-        closeLockModal();
-        inp.disabled = false;
-        msg.style.color = '';
-        msg.style.textShadow = '';
         if (mode === 'master') {
           LOCK_MODE = 'unlocked';
           UNLOCKED_CUSTOMER = null;
         } else {
           LOCK_MODE = 'customer';
-          UNLOCKED_CUSTOMER = _pendingCustClick;
-          _pendingCustClick = null;
+          UNLOCKED_CUSTOMER = capturedCust;
         }
+        closeLockModal();
+        inp.disabled = false;
+        msg.style.color = '';
+        msg.style.textShadow = '';
         applyLockState();
       }, 600);
       return;
