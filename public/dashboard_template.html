@@ -381,14 +381,17 @@ body.customer-mode tr.cust-revealed td{
   background:transparent !important;
   font-size:12.5px !important;
 }
-body.customer-mode tr.cust-revealed td.num,
-body.customer-mode tr.cust-revealed td:nth-child(3),
-body.customer-mode tr.cust-revealed td:nth-child(4),
-body.customer-mode tr.cust-revealed td:nth-child(5),
-body.customer-mode tr.cust-revealed td:nth-child(6),
-body.customer-mode tr.cust-revealed td:nth-child(7),
-body.customer-mode tr.cust-revealed td:nth-child(8),
-body.customer-mode tr.cust-revealed td:nth-child(9){
+/* NOTE: the hide rule (body.locked #cust-tbody td:nth-child(n)) contains an ID,
+   so these reveal selectors must ALSO include #cust-tbody to out-specify it —
+   an ID beats any number of classes even when both rules use !important. */
+body.customer-mode #cust-tbody tr.cust-revealed td.num,
+body.customer-mode #cust-tbody tr.cust-revealed td:nth-child(3),
+body.customer-mode #cust-tbody tr.cust-revealed td:nth-child(4),
+body.customer-mode #cust-tbody tr.cust-revealed td:nth-child(5),
+body.customer-mode #cust-tbody tr.cust-revealed td:nth-child(6),
+body.customer-mode #cust-tbody tr.cust-revealed td:nth-child(7),
+body.customer-mode #cust-tbody tr.cust-revealed td:nth-child(8),
+body.customer-mode #cust-tbody tr.cust-revealed td:nth-child(9){
   display:table-cell !important;
   color:#1a1814 !important;
   background:transparent !important;
