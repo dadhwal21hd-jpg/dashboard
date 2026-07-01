@@ -185,6 +185,24 @@ select:focus,input:focus{outline:none;border-color:var(--accent);}
   transition:all .25s;
   box-shadow:0 0 8px rgba(92,242,255,.15),inset 0 0 10px rgba(92,242,255,.08);
 }
+/* Animated light-sheen sweep across the button (sci-fi shimmer) */
+.lock-btn::before{
+  content:'';
+  position:absolute;
+  top:0;left:-60%;
+  width:45%;height:100%;
+  background:linear-gradient(105deg,transparent,rgba(255,255,255,.28),transparent);
+  transform:skewX(-18deg);
+  pointer-events:none;
+  animation:lockSheen 3.4s ease-in-out infinite;
+}
+@keyframes lockSheen{
+  0%   {left:-60%;}
+  55%  {left:130%;}
+  100% {left:130%;}
+}
+/* keep the icon + label crisp above the sheen */
+.lock-btn > span{position:relative;z-index:1;}
 .lock-btn:hover{
   border-color:#5cf2ff;
   color:#fff;
@@ -212,6 +230,20 @@ select:focus,input:focus{outline:none;border-color:var(--accent);}
 @keyframes lockPulse{
   0%,100%{box-shadow:0 0 10px rgba(255,92,138,.3),inset 0 0 12px rgba(255,92,138,.1);}
   50%   {box-shadow:0 0 18px rgba(255,92,138,.55),inset 0 0 16px rgba(255,92,138,.25);}
+}
+/* Occasional holo-flicker on the lock/customer icon */
+.lock-btn.locked .lock-icon,
+.lock-btn.customer-mode .lock-icon{
+  animation:iconFlicker 4.5s linear infinite;
+}
+@keyframes iconFlicker{
+  0%,89%,100%{opacity:1;}
+  90%{opacity:.35;}
+  91%{opacity:1;}
+  93%{opacity:.55;}
+  94%{opacity:1;}
+  96%{opacity:.4;}
+  97%{opacity:1;}
 }
 .lock-btn.customer-mode{
   background:linear-gradient(135deg,#0a1a14 0%,#15382a 100%);
@@ -435,6 +467,23 @@ body.customer-mode tr.cust-revealed::before{
   pointer-events:none;
   animation:scan 4s linear infinite;
 }
+/* Horizontal scan beam sweeping down the whole overlay */
+.lock-modal-backdrop::after{
+  content:'';
+  position:absolute;
+  left:0;right:0;top:0;
+  height:2px;
+  background:linear-gradient(90deg,transparent,rgba(92,242,255,.65),transparent);
+  box-shadow:0 0 14px rgba(92,242,255,.85);
+  pointer-events:none;
+  animation:beamSweep 3.6s linear infinite;
+}
+@keyframes beamSweep{
+  0%  {top:-2%;opacity:0;}
+  8%  {opacity:1;}
+  92% {opacity:1;}
+  100%{top:102%;opacity:0;}
+}
 .lock-modal{
   position:relative;
   background:linear-gradient(135deg,#0a0e1a 0%,#1a2138 100%);
@@ -447,7 +496,11 @@ body.customer-mode tr.cust-revealed::before{
     0 0 40px rgba(92,242,255,.25),
     inset 0 0 30px rgba(92,242,255,.05),
     0 0 100px rgba(0,0,0,.6);
-  animation:modalIn .4s cubic-bezier(.2,.9,.3,1.2);
+  animation:modalIn .4s cubic-bezier(.2,.9,.3,1.2), modalGlow 3.5s ease-in-out .4s infinite;
+}
+@keyframes modalGlow{
+  0%,100%{box-shadow:0 0 40px rgba(92,242,255,.25),inset 0 0 30px rgba(92,242,255,.05),0 0 100px rgba(0,0,0,.6);}
+  50%    {box-shadow:0 0 64px rgba(92,242,255,.5),inset 0 0 42px rgba(92,242,255,.12),0 0 120px rgba(0,0,0,.6);}
 }
 .lock-modal::before,.lock-modal::after{
   content:'';
@@ -465,6 +518,13 @@ body.customer-mode tr.cust-revealed::before{
   letter-spacing:3px;
   margin-bottom:6px;
   text-shadow:0 0 8px rgba(92,242,255,.7);
+  animation:titleGlitch 4s steps(1) infinite;
+}
+@keyframes titleGlitch{
+  0%,90%,100%{text-shadow:0 0 8px rgba(92,242,255,.7);transform:translateX(0);}
+  91%{text-shadow:-2px 0 #ff3a5a,2px 0 #5cf2ff,0 0 8px rgba(92,242,255,.7);transform:translateX(1px);}
+  92%{text-shadow:2px 0 #ff3a5a,-2px 0 #5cf2ff,0 0 8px rgba(92,242,255,.7);transform:translateX(-1px);}
+  93%{text-shadow:0 0 8px rgba(92,242,255,.7);transform:translateX(0);}
 }
 .lock-modal-sub{
   font-family:'Syne',sans-serif;
@@ -570,6 +630,24 @@ body.customer-mode tr.cust-revealed::before{
   0%  {opacity:0;}
   20% {opacity:1;}
   100%{opacity:0;}
+}
+/* Sharp horizontal energy beam on unlock */
+.unlock-flash::before{
+  content:'';
+  position:absolute;
+  left:0;right:0;top:50%;
+  height:3px;
+  transform:translateY(-50%) scaleX(.15);
+  background:linear-gradient(90deg,transparent,rgba(92,255,170,.95),#fff,rgba(92,255,170,.95),transparent);
+  box-shadow:0 0 24px rgba(92,255,170,1);
+  opacity:0;
+}
+.unlock-flash.fire::before{animation:flashBeam .8s ease-out;}
+@keyframes flashBeam{
+  0%  {opacity:0;transform:translateY(-50%) scaleX(.15);}
+  25% {opacity:1;transform:translateY(-50%) scaleX(1);}
+  60% {opacity:1;}
+  100%{opacity:0;transform:translateY(-50%) scaleX(1);}
 }
 
 /* Boot-up sequence text */
