@@ -20,15 +20,18 @@ export const CLUSTERS: ClusterDef[] = [
     name: "Frontier Raas Group",
     members: [
       "FRONTIER RAAS (P) LTD",
+      "FRONTIER RAAS [P] LTD.",
       "GNE Exports Pvt. Ltd.",
       "GNE (Nittu Di)",
       "GNE (Tushar Ji)",
+      "FR Tushar ji",
     ],
   },
   {
     name: "Seasons Group",
     members: [
       "Seasons Enterprises Pvt. Ltd.",
+      "SEASONS ENTERPRISES PVT LTD",
       "Season Bharat",
       "Season Amin",
       "Season AMIN",
@@ -41,7 +44,7 @@ export const CLUSTERS: ClusterDef[] = [
   },
   {
     name: "Ganpati Group",
-    members: ["Ganpati Textiles", "Ganpati Shop"],
+    members: ["Ganpati Textiles", "GANPATI TEXTILES.", "Ganpati Shop"],
   },
   {
     name: "Sachdeva Group",
@@ -65,11 +68,48 @@ export const CLUSTERS: ClusterDef[] = [
   },
   {
     name: "Family",
-    members: ["KOMAL MAM", "KRITI MAM", "BITTU SIR", "NITTU SIR"],
+    members: ["KOMAL MAM", "KRITI MAM", "KRITI MAM(SUMINA SOOD)", "BITTU SIR", "NITTU SIR", "KIRTI MAM HOUSE"],
   },
   {
     name: "BHOPAL GROUP",
-    members: ["ABHI BHOPAL", "TANIA DI (BHOPAL)"],
+    // "TANIA DI (BHOPAL )" (trailing space before the bracket) is how the
+    // new data source spells it — kept as a separate entry since it isn't
+    // caught by the case-insensitive match against "TANIA DI (BHOPAL)".
+    members: ["ABHI BHOPAL", "TANIA DI (BHOPAL)", "TANIA DI (BHOPAL )", "Tania di"],
+  },
+  {
+    name: "Triage Industries Group",
+    members: [
+      "TRAIGE INDUSTRIES",
+      "Triage Industries",
+      "Traige Industries",
+      "Triage Indsutries",
+      "TRIAGE INDUSTRIES PVT LTD",
+    ],
+  },
+  {
+    name: "Chinto Ji Group",
+    members: ["CHINTO JI", "Chintu Ji (Chandni Chowk)", "SHABAD RAJOORI", "SHABAD RAJOURI"],
+  },
+  {
+    name: "Roop Kala Group",
+    members: ["Roop Kala", "ROOP KALA"],
+  },
+  {
+    name: "Ria Boutique Group",
+    members: ["Ria Boutique", "RIYA BOUTIQUE"],
+  },
+  {
+    name: "Dimple Fashion Group",
+    members: ["Dimple Fashion", "DIMPLE FASHION"],
+  },
+  {
+    name: "Kala Shree Heritage Group",
+    members: ["Kala Shree Heritage", "KALA SHREE HERITAGE"],
+  },
+  {
+    name: "Gullu Exclusive Group",
+    members: ["Gullu Exclusive", "GULLU EXCLUSIVE INTERNATIONAL"],
   },
 ];
 
