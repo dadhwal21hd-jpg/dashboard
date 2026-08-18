@@ -111,6 +111,10 @@ export const CLUSTERS: ClusterDef[] = [
     name: "Gullu Exclusive Group",
     members: ["Gullu Exclusive", "GULLU EXCLUSIVE INTERNATIONAL"],
   },
+  {
+    name: "Sham Fashion Group",
+    members: ["SHAM FASHION", "SHAM FASHION MALL"],
+  },
 ];
 
 /** Normalise a name for comparison (lowercase + trim, collapse multiple spaces). */
