@@ -120,6 +120,26 @@ select:focus,input:focus{outline:none;border-color:var(--accent);}
 .sg-inner-table tr:hover td{background:#fdf9f6;}
 .sg-inner-table tr:last-child td{border-bottom:none;}
 
+/* ─── STYLE → CUSTOMER DRILL (inside the Style Numbers tab) ──────── */
+.sn-row{cursor:pointer;}
+.sn-row.open td{background:#fdf0e8!important;}
+.sn-chev{display:inline-block;width:10px;color:var(--text3);font-size:9px;}
+.sn-detail > td{padding:0!important;background:#faf9f7;}
+.sn-detail:hover > td{background:#faf9f7!important;}
+.sn-detail-inner{padding:12px 14px 14px 40px;border-left:3px solid var(--accent);}
+.sn-summary{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:9px;font-size:11px;color:var(--text2);font-family:'IBM Plex Mono',monospace;}
+.sn-chip{display:inline-flex;align-items:center;gap:4px;background:#fff;border:1px solid var(--border);border-radius:4px;padding:2px 7px;font-size:10px;}
+.sn-cust-table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);border-radius:6px;overflow:hidden;}
+.sn-cust-table th{padding:6px 10px;text-align:left;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);background:#fbfaf8;border-bottom:1px solid var(--border);white-space:nowrap;}
+.sn-cust-table td{padding:6px 10px;border-bottom:1px solid #f4f1ec;font-size:12px;}
+.sn-cust-table tr:last-child td{border-bottom:none;}
+.sn-cust-table tbody tr:hover td{background:#fdf9f6;}
+.sn-verdict{display:inline-flex;align-items:center;gap:4px;border-radius:4px;padding:1px 7px;font-size:10px;font-family:'IBM Plex Mono',monospace;font-weight:600;white-space:nowrap;}
+.sn-v-strong{background:#e6f4f1;border:1px solid #b0ddd4;color:#2a8a72;}
+.sn-v-ok{background:#fef3e2;border:1px solid #f0d8b0;color:#b5622a;}
+.sn-v-weak{background:#e8eef7;border:1px solid #baccdf;color:#4a6fa5;}
+.sn-v-thin{background:#fbeaea;border:1px solid #e8c0c0;color:#c0392b;}
+
 /* ─── CLUSTERS ───────────────────────────────────────────────────── */
 .cl-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
 .cl-card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px;box-shadow:var(--sh);transition:all .15s;}
@@ -1547,6 +1567,7 @@ function getFilteredCustQR(name) {
 // ══════════════════════════════════════════════════════════════
 // HELPERS
 // ══════════════════════════════════════════════════════════════
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function fmt(n){return n>=1e7?'₹'+(n/1e7).toFixed(2)+'Cr':n>=1e5?'₹'+(n/1e5).toFixed(1)+'L':'₹'+n.toLocaleString('en-IN');}
 function fN(n){return n.toLocaleString('en-IN');}
 function rn(i){const l=['🥇','🥈','🥉'];const c=i===0?'rg':i===1?'rs':i===2?'rb':'';return`<span class="rank-num ${c}">${i<3?l[i]:i+1}</span>`;}
@@ -1664,13 +1685,13 @@ function renderSG() {
     const rows=sorted.map((s,i)=>{
       const pct=((s.qty/mq)*100).toFixed(0);
       const star=s.qty>=40?'<span class="badge bg" style="font-size:9px;padding:1px 5px">⭐</span>':s.qty>=25?'<span class="badge br" style="font-size:9px;padding:1px 5px">🔥</span>':'';
-      return`<tr data-style="${s.n}">
-        <td style="color:var(--text3);font-family:IBM Plex Mono,monospace;font-size:11px;padding:7px 12px;width:32px">${i+1}</td>
+      return`<tr class="sn-row" data-style="${esc(s.n)}" onclick="toggleStyleCust(this)" title="Click to see which customers bought this style">
+        <td style="color:var(--text3);font-family:IBM Plex Mono,monospace;font-size:11px;padding:7px 12px;width:32px"><span class="sn-chev">▸</span>${i+1}</td>
         <td style="padding:7px 12px"><strong style="font-family:IBM Plex Mono,monospace;color:${col}">#${s.n}</strong></td>
         <td style="padding:7px 12px"><div style="display:flex;align-items:center;gap:8px"><div style="width:100px;background:#f0ede8;height:6px;border-radius:3px"><div style="width:${pct}%;height:100%;background:${col};border-radius:3px;opacity:.75"></div></div><strong style="font-family:IBM Plex Mono,monospace;font-size:13px;color:${col};min-width:24px">${s.qty}</strong>${star}</div></td>
         <td style="text-align:right;font-family:IBM Plex Mono,monospace;font-size:12px;color:var(--text2);padding:7px 12px">${fmt(s.rev)}</td>
         <td style="text-align:right;font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--text3);padding:7px 12px">${s.price?'₹'+fN(s.price):'—'}</td>
-        <td style="text-align:center;font-family:IBM Plex Mono,monospace;font-size:12px;color:var(--text2);padding:7px 12px">${s.cust}</td>
+        <td style="text-align:center;font-family:IBM Plex Mono,monospace;font-size:12px;padding:7px 12px"><span style="color:var(--accent);border-bottom:1px dotted var(--accent);font-weight:600">${s.cust} ▾</span></td>
         <td style="text-align:right;font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--text3);padding:7px 12px">${(s.qty/nMo).toFixed(1)}/mo</td>
       </tr>`;
     }).join('');
@@ -1691,10 +1712,150 @@ function renderSG() {
   }).join('');
 }
 
+// ── Style → Customer drill ────────────────────────────────────
+// Answers "who actually bought this style, and are they real buyers?"
+// Everything is recomputed from the currently filtered raw rows so the
+// breakdown always matches the numbers in the row above it.
+
+function styleBuyers(sn) {
+  const rows = FILTERED_RAW.length < D.raw.length ? FILTERED_RAW : D.raw;
+  const acc = {};
+  for (const r of rows) {
+    if (r.sn !== sn || !r.c) continue;
+    let a = acc[r.c];
+    if (!a) a = acc[r.c] = {name:r.c, qty:0, rev:0, dates:new Set(), first:null, last:null};
+    a.qty += r.q; a.rev += r.q * r.p;
+    if (r.d) a.dates.add(r.d);
+    const ds = r.dt ? String(r.dt).slice(0,10) : null;
+    if (ds) { if (!a.first || ds < a.first) a.first = ds; if (!a.last || ds > a.last) a.last = ds; }
+  }
+  return Object.values(acc)
+    .map(a => ({...a, rev:Math.round(a.rev), orders:a.dates.size || 1}))
+    .sort((x,y) => y.qty - x.qty);
+}
+
+// Buyer quality call. `custQty` = that customer's total units across ALL styles
+// (in the current filter) — it separates a big account placing one order from
+// a marginal account placing one order.
+function buyerVerdict(b, custQty) {
+  if (b.orders >= 3)                        return {k:'strong', l:'✅ Proven',      t:`Reordered on ${b.orders} separate dispatch dates`};
+  if (b.orders === 2)                       return {k:'strong', l:'🔁 Repeat',      t:'Ordered on 2 separate dispatch dates'};
+  if (b.qty >= 25 && custQty >= 150)        return {k:'ok',     l:'📦 Bulk one-off', t:'Single order, but a large one from an established account'};
+  if (b.qty >= 10)                          return {k:'weak',   l:'◆ One-off',      t:'One dispatch date only — demand not repeated yet'};
+  return {k:'thin', l:'⚠️ Thin', t:'One small order — likely a trial/sample rather than proven demand'};
+}
+
+// Respects the lock: real names only when unlocked (or for the one revealed customer).
+function buyerLabel(name, idx) {
+  if (LOCK_MODE === 'unlocked') return esc(name);
+  if (LOCK_MODE === 'customer' && name === UNLOCKED_CUSTOMER) return esc(name);
+  return `<span style="color:var(--text3)">CUSTOMER ${String(idx+1).padStart(2,'0')}</span>`;
+}
+
+function styleBuyersHTML(sn) {
+  const buyers = styleBuyers(sn);
+  if (!buyers.length) return '<div style="font-size:12px;color:var(--text3)">No matching rows in the current filter.</div>';
+
+  const fa = getFA();
+  const custQty = {};
+  fa.customers.forEach(c => { custQty[c.name] = c.qty; });
+  const membership = D.cluster_membership || {};
+
+  const totalQty = buyers.reduce((s,b) => s + b.qty, 0) || 1;
+  const repeat   = buyers.filter(b => b.orders >= 2).length;
+  const thin     = buyers.filter(b => b.orders === 1 && b.qty < 10).length;
+  const conc     = ((buyers[0].qty / totalQty) * 100).toFixed(0);
+  const grouped  = new Set(buyers.map(b => membership[b.name]).filter(Boolean));
+
+  // Style-level read: broad repeat demand vs. one account carrying the number
+  let head;
+  if (repeat >= 2 && conc < 70)       head = {k:'strong', l:'✅ Real demand',      t:'Multiple customers reordered and no single account dominates'};
+  else if (buyers.length === 1)       head = {k:'thin',   l:'⚠️ Single buyer',     t:'All units went to one customer'};
+  else if (conc >= 70)                head = {k:'weak',   l:'⚠️ Concentrated',     t:`One customer took ${conc}% of the units`};
+  else if (repeat >= 1)               head = {k:'ok',     l:'🟡 Some repeat',      t:'At least one customer came back for it'};
+  else                                head = {k:'weak',   l:'◆ No reorders yet',   t:'Every customer ordered it exactly once'};
+
+  const rows = buyers.map((b,i) => {
+    const v     = buyerVerdict(b, custQty[b.name] || b.qty);
+    const share = ((b.qty / totalQty) * 100).toFixed(0);
+    const cl    = membership[b.name];
+    const clBadge = cl ? `<span class="badge bb" style="font-size:8px;margin-left:5px;background:#f5e6d3;color:var(--accent);border:1px solid var(--accent)" title="Part of group: ${esc(cl)}">⌒ ${esc(cl.length>16?cl.slice(0,14)+'…':cl)}</span>` : '';
+    const span  = (b.first && b.last)
+      ? (b.first === b.last ? b.first : `${b.first} → ${b.last}`)
+      : '—';
+    return `<tr>
+      <td style="color:var(--text3);font-family:'IBM Plex Mono',monospace;font-size:10px;width:26px">${i+1}</td>
+      <td style="font-weight:500">${buyerLabel(b.name, i)}${clBadge}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700">${fN(b.qty)}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text3)">${share}%</td>
+      <td style="text-align:center">${freqBadge(b.orders)}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text2)">${b.rev>0?fmt(b.rev):'—'}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);white-space:nowrap">${span}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text3)" title="This customer's total units across all styles">${fN(custQty[b.name] || b.qty)}</td>
+      <td style="text-align:right"><span class="sn-verdict sn-v-${v.k}" title="${v.t}">${v.l}</span></td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div class="sn-summary">
+      <span class="sn-verdict sn-v-${head.k}" title="${head.t}">${head.l}</span>
+      <span class="sn-chip">${buyers.length} buyer${buyers.length===1?'':'s'}</span>
+      <span class="sn-chip" title="Customers who ordered this style on more than one dispatch date">${repeat} repeat</span>
+      <span class="sn-chip" title="Single order under 10 units — likely trial/sample">${thin} thin</span>
+      <span class="sn-chip" title="Share of this style's units taken by its largest buyer">top buyer ${conc}%</span>
+      ${grouped.size?`<span class="sn-chip" title="Some buyers belong to the same customer group — they are not independent">⌒ ${grouped.size} group${grouped.size===1?'':'s'} involved</span>`:''}
+    </div>
+    <table class="sn-cust-table">
+      <thead><tr>
+        <th>#</th><th>Customer</th>
+        <th style="text-align:right">Units</th>
+        <th style="text-align:right">Share</th>
+        <th style="text-align:center">Orders</th>
+        <th style="text-align:right">Revenue</th>
+        <th style="text-align:right">Order Window</th>
+        <th style="text-align:right">Their Total</th>
+        <th style="text-align:right">Verdict</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function toggleStyleCust(rowEl) {
+  const sn   = rowEl.dataset.style;
+  const tbody = rowEl.parentElement;
+  const next = rowEl.nextElementSibling;
+  const isOpen = next && next.classList.contains('sn-detail');
+
+  // Only one open detail per sub cut group
+  tbody.querySelectorAll('tr.sn-detail').forEach(t => t.remove());
+  tbody.querySelectorAll('tr.sn-row.open').forEach(t => {
+    t.classList.remove('open');
+    const c = t.querySelector('.sn-chev'); if (c) c.textContent = '▸';
+  });
+  if (isOpen) return;   // it was open → the clear above collapsed it
+
+  const tr = document.createElement('tr');
+  tr.className = 'sn-detail';
+  tr.dataset.style = sn;
+  tr.innerHTML = `<td colspan="7"><div class="sn-detail-inner">${styleBuyersHTML(sn)}</div></td>`;
+  rowEl.after(tr);
+  rowEl.classList.add('open');
+  const c = rowEl.querySelector('.sn-chev'); if (c) c.textContent = '▾';
+}
+
+function closeAllStyleCust() {
+  document.querySelectorAll('#sg-container tr.sn-detail').forEach(t => t.remove());
+  document.querySelectorAll('#sg-container tr.sn-row.open').forEach(t => {
+    t.classList.remove('open');
+    const c = t.querySelector('.sn-chev'); if (c) c.textContent = '▸';
+  });
+}
+
 function tg(i){document.getElementById('sh-'+i)?.classList.toggle('open');document.getElementById('sb-'+i)?.classList.toggle('open');}
 function expandAll(){document.querySelectorAll('.sg-hdr,.sg-body').forEach(el=>el.classList.add('open'));}
-function collapseAll(){document.querySelectorAll('.sg-hdr,.sg-body').forEach(el=>el.classList.remove('open'));}
+function collapseAll(){closeAllStyleCust();document.querySelectorAll('.sg-hdr,.sg-body').forEach(el=>el.classList.remove('open'));}
 function filterSG(){
+  closeAllStyleCust();   // detail rows would otherwise be re-shown by the row loops below
   const f=document.getElementById('snfilter').value;
   const s=document.getElementById('snsearch').value.trim().toLowerCase();
   document.querySelectorAll('.sg').forEach((el,i)=>{
