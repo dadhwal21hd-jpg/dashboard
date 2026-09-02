@@ -92,8 +92,8 @@ export interface DashboardData {
   cluster_membership: Record<string, string>;
   /** Default qty threshold for Style Numbers tab (UI default; user can override). */
   style_threshold_default: number;
-  /** Style number → Drive folder ID. Empty when designs aren't configured. */
-  _designs?: Record<string, string>;
+  /** Style numbers that have a design image. Empty when designs are off. */
+  _designs?: string[];
   /** Absolute base URL of /api/design (the iframe can't use relative URLs). */
   _design_base?: string;
   /** Signed, expiring token authorising design-image reads. */

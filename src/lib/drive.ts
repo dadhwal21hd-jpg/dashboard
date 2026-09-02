@@ -9,7 +9,7 @@
  * shared with the service account (sharing one parent cascades to children).
  */
 import { google } from "googleapis";
-import { buildAuth, SCOPE_DRIVE } from "./google";
+import { buildDesignsAuth, SCOPE_DRIVE } from "./google";
 
 export interface DriveImage {
   id: string;
@@ -26,7 +26,7 @@ const listCache = new Map<string, { files: DriveImage[]; at: number }>();
 const bytesCache = new Map<string, { buf: Buffer; type: string; at: number }>();
 
 function driveClient() {
-  return google.drive({ version: "v3", auth: buildAuth([SCOPE_DRIVE]) });
+  return google.drive({ version: "v3", auth: buildDesignsAuth([SCOPE_DRIVE]) });
 }
 
 /**
@@ -101,7 +101,7 @@ export async function fetchImageBytes(
       // thumbnailLink carries its own signature but still wants the bearer
       // token; the trailing =sNNN is swapped for the size we actually want.
       const url = thumb.replace(/=s\d+(-c)?$/, `=${size}`);
-      const token = await buildAuth([SCOPE_DRIVE]).getAccessToken();
+      const token = await buildDesignsAuth([SCOPE_DRIVE]).getAccessToken();
       const res = await fetch(url, {
         headers: token?.token ? { Authorization: `Bearer ${token.token}` } : undefined,
       });

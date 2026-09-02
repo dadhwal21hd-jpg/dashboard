@@ -2529,7 +2529,15 @@ document.getElementById('drop-zone').addEventListener('drop', e=>{e.preventDefau
 // blob URL (opaque origin) — relative paths and cookies don't work here.
 // ══════════════════════════════════════════════════════════════
 function designsOn(){ return !!(D && D._design_base && D._design_token); }
-function hasDesign(sn){ return designsOn() && !!(D._designs && D._designs[String(sn)]); }
+
+// D._designs is the list of style numbers that have an image; Drive IDs stay
+// server-side. Built into a Set once — this is checked per table row.
+let _DESIGN_SET = null;
+function hasDesign(sn){
+  if (!designsOn()) return false;
+  if (!_DESIGN_SET) _DESIGN_SET = new Set((D._designs || []).map(String));
+  return _DESIGN_SET.has(String(sn));
+}
 
 function designURL(params){
   const q = new URLSearchParams({...params, t: D._design_token});
@@ -2560,18 +2568,27 @@ function openDesign(sn){
   if (!hasDesign(sn)) return;
   _dzStyle = String(sn); _dzFiles = []; _dzIdx = 0;
   document.getElementById('dz-title').textContent = '#' + _dzStyle;
-  document.getElementById('dz-sub').textContent = 'loading…';
-  document.getElementById('dz-stage').innerHTML = '<div style="color:var(--text3);font-size:12px">Fetching design…</div>';
+  document.getElementById('dz-sub').textContent = '';
+  document.getElementById('dz-file').textContent = '';
   document.getElementById('dz').classList.add('open');
 
+  // Nearly every style has exactly one image, so show it straight away rather
+  // than waiting on a listing round-trip.
+  document.getElementById('dz-stage').innerHTML =
+    `<img src="${designURL({style: _dzStyle, sz: 'w1200'})}" alt="Design ${esc(_dzStyle)}"
+          onerror="dzFail()">`;
+
+  // Then ask what else is in there; arrows appear only if there's more.
   fetch(designURL({style: _dzStyle, list: '1'}))
     .then(r => r.ok ? r.json() : Promise.reject(r.status))
-    .then(j => { _dzFiles = j.files || []; dzDraw(); })
-    .catch(() => {
-      document.getElementById('dz-sub').textContent = '';
-      document.getElementById('dz-stage').innerHTML =
-        '<div style="color:var(--text3);font-size:12px;text-align:center;padding:20px">Could not load this design.<br><span style="font-size:10px">Check the folder is shared with the service account.</span></div>';
-    });
+    .then(j => { _dzFiles = j.files || []; if (_dzFiles.length > 1) dzDraw(); })
+    .catch(() => {});
+}
+
+function dzFail(){
+  document.getElementById('dz-sub').textContent = '';
+  document.getElementById('dz-stage').innerHTML =
+    '<div style="color:var(--text3);font-size:12px;text-align:center;padding:24px">Could not load this design.<br><span style="font-size:10px">Check the image is shared with the service account.</span></div>';
 }
 
 function dzDraw(){

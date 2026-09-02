@@ -217,65 +217,80 @@ don't render.
 
 ### a. The mapping sheet
 
-A spreadsheet (separate from the orders sheet) with one row per style:
+A spreadsheet (separate from the orders sheet) with one row per style — the
+live setup uses the product catalogue, whose `Item Code` column matches the
+orders sheet's `Style Number`:
 
-| Style Number | Drive Folder Link |
-|--------------|-------------------|
-| 1234 | https://drive.google.com/drive/folders/1AbC… |
-| 1235 | 1XyZ… |
+| Item Code | Image |
+|-----------|-------|
+| 81855 | https://drive.google.com/file/d/1PPF…/view |
+| 81933 | https://drive.google.com/drive/folders/1AbC… |
 
-- Header names are matched loosely — `Style No.`, `Folder`, `Drive Link`, `URL`
-  and similar all work. If the headers aren't recognised, the first column is
-  taken as the style and the first column that looks like a Drive link as the
-  folder.
-- The link cell accepts a full folder URL (`/folders/<id>`, `?id=<id>`) or a
-  bare folder ID.
-- Style numbers must match the orders sheet exactly (trimmed).
+- The **style column** is found by header (`Item Code`, `Style Number`,
+  `Style No.`, `SKU`, `Code`…), falling back to the most-unique populated
+  column.
+- The **link column** is found by header *and verified against its values* — a
+  column is only used once its cells actually contain Drive links. This matters:
+  the catalogue has both a full `Image` column and an empty `Photo` column, and
+  header matching alone would pick the wrong one.
+- Cells may hold a file link (`/file/d/<id>/view`), a folder link
+  (`/drive/folders/<id>`), or a bare folder ID. Folders are listed, so a style
+  with several images gets arrows in the viewer.
+- Style codes must match the orders sheet exactly (trimmed).
 
-**Share this spreadsheet with the service-account email as Viewer**, same as in
-step 5.
+**Share this spreadsheet with the designs service-account email as Viewer.**
 
-### b. Give the service account access to the designs
+### b. Give the service account access to the images
 
 1. In Google Cloud Console → **APIs & Services → Library** → search
-   **Google Drive API** → **Enable**. (Same project as the Sheets API.)
-2. In Drive, right-click the **parent folder** that holds all the design
-   folders → **Share** → paste the service-account email → **Viewer** → Send.
-   Sharing the parent cascades to every subfolder, so you only do this once.
+   **Google Drive API** → **Enable**, in the project that owns the *designs*
+   service account.
+2. In Drive, right-click the folder holding the design images → **Share** →
+   paste the service-account email → **Viewer** → Send. Sharing a parent
+   cascades, so this is a one-time action.
 
-No sharing settings need to be loosened — the folders stay private. Images are
-fetched server-side by the service account and streamed through
-`/api/design`, which is gated by a signed, expiring token.
+No sharing settings need loosening — the images stay private. They're fetched
+server-side by the service account and streamed through `/api/design`, which is
+gated by a signed, expiring token.
 
 ### c. Env vars
 
 | Variable | Value |
 |---|---|
-| `GOOGLE_DESIGNS_SHEET_ID` | the mapping spreadsheet's ID (the long string between `/d/` and `/edit`) |
-| `GOOGLE_DESIGNS_RANGE` | optional; tab name, defaults to `Sheet1` |
+| `GOOGLE_DESIGNS_SHEET_ID` | the catalogue spreadsheet's ID — a full `docs.google.com/…` URL is also accepted |
+| `GOOGLE_DESIGNS_RANGE` | tab name; defaults to `Sheet1`. Spaces are fine (`Product Data`) — it's quoted automatically |
+| `GOOGLE_DESIGNS_SERVICE_ACCOUNT_EMAIL` | optional. Set when the designs live under a *different* service account / Cloud project than the orders sheet |
+| `GOOGLE_DESIGNS_SERVICE_ACCOUNT_KEY` | optional; the matching private key, with newlines as literal `\n`, wrapped in double quotes |
+
+If the two `GOOGLE_DESIGNS_SERVICE_ACCOUNT_*` vars are absent, the main service
+account is used for the catalogue and the images too — in which case it needs
+access to both.
 
 Add them to `.env.local` and to Vercel → Settings → Environment Variables, then
 redeploy.
 
-**If you're using a new service account for this**, it needs access to *both*
-sheets and the design folders — either replace `GOOGLE_SERVICE_ACCOUNT_EMAIL` /
-`GOOGLE_SERVICE_ACCOUNT_KEY` and re-share the orders sheet with it, or keep the
-existing one and share the new material with that.
+> A `.env` file is one `KEY=value` per line. A service-account JSON keyfile
+> can't be pasted in as-is: take `client_email` and `private_key` out of it, and
+> keep the `\n` sequences inside the key literal.
 
 ### d. Checking it works
 
 Sign in, open the Style Numbers tab, expand a sub cut group. Styles present in
-the mapping sheet show a thumbnail; unmapped ones show a hatched placeholder.
-If every thumbnail is a placeholder, the usual causes are, in order:
+the catalogue show a thumbnail; the rest show a hatched placeholder. **Expect
+gaps** — as of the last check, 4,950 of 7,848 ordered styles (63%) have an
+image; the unmatched ones are the older low-numbered codes the catalogue
+doesn't cover.
 
-1. `GOOGLE_DESIGNS_SHEET_ID` not set (or not redeployed) — no mapping at all.
-2. Mapping sheet not shared with the service account.
-3. Drive API not enabled, or the design folders not shared with it.
-4. Style numbers formatted differently in the two sheets (e.g. `1234` vs `1234 `
-   or `#1234`).
+If *every* thumbnail is a placeholder, the usual causes in order:
 
-Vercel's function logs name the failing step — `Design map fetch failed` for
-1–2, `Drive list failed for folder …` for 3.
+1. `GOOGLE_DESIGNS_SHEET_ID` not set, or set but not redeployed.
+2. Catalogue sheet not shared with the designs service account.
+3. Drive API not enabled, or the images not shared with it.
+4. Style codes formatted differently in the two sheets (`1234` vs `#1234`).
+
+The server logs name the failing step: `Design map fetch failed` for 1–2,
+`Design map: N styles from "X" → "Y"` on success (check it names the columns you
+expect), and `Drive image fetch failed` for 3.
 
 ---
 

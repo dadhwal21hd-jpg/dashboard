@@ -99,10 +99,20 @@ present it as a security boundary.
 ## Design thumbnails
 
 Optional feature, off unless `GOOGLE_DESIGNS_SHEET_ID` is set. A separate
-spreadsheet maps style number → Drive folder;
-[src/lib/designs.ts](src/lib/designs.ts) reads it (10-min cache, fuzzy headers,
-`extractFolderId()` accepts URLs or bare IDs) and
-[src/lib/drive.ts](src/lib/drive.ts) lists folder images and streams bytes.
+product-catalogue spreadsheet maps style code → Drive image;
+[src/lib/designs.ts](src/lib/designs.ts) reads it (10-min cache) and
+[src/lib/drive.ts](src/lib/drive.ts) fetches bytes.
+
+Real shape of that data, which the code is built around: the catalogue's
+`Item Code` joins to the orders sheet's `Style Number` (~63% of ordered styles
+have an image), and the links are **direct file links**, one per style — folder
+links are supported but don't occur. Column detection is evidence-based, not
+header-only: the sheet has a populated `Image` column *and* an empty `Photo`
+column, and header matching alone picks the wrong one.
+
+The designs often live under a **different service account and Cloud project**
+than the orders sheet, hence `buildDesignsAuth()` in
+[src/lib/google.ts](src/lib/google.ts), which falls back to the main account.
 
 **The non-obvious part:** the template runs in a blob-URL iframe, so it has an
 *opaque origin* — relative URLs don't resolve and the NextAuth cookie is not
@@ -111,11 +121,15 @@ sent on subresource requests. So `/api/design` is authorised by an HMAC token
 and `DATA._design_base` carries the absolute origin. Any future feature that
 loads a URL from inside the template hits this same wall.
 
+`DATA._designs` is just the **list of style numbers that have an image**, not
+the Drive IDs — the client only needs presence, `/api/design` resolves IDs
+server-side, and the catalogue is far bigger than the order book.
+
 Client side: `designThumb(sn, 'sm'|'md')` renders a cell (empty string when the
-feature is off, hatched placeholder when the style has no folder);
-`openDesign(sn)` opens the `#dz` lightbox, which lists the folder via
-`?list=1` and pages through it. Designs are deliberately **not** redacted by
-`LOCK_MODE` — see the note in the stylesheet.
+feature is off, hatched placeholder when the style has no image);
+`openDesign(sn)` opens the `#dz` lightbox, showing the image immediately and
+only then checking `?list=1` for siblings to page through. Designs are
+deliberately **not** redacted by `LOCK_MODE` — see the note in the stylesheet.
 
 Every failure path degrades to "no thumbnail", never to an error: a broken
 mapping sheet or unshared folder must not take the dashboard down.

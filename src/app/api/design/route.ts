@@ -68,12 +68,15 @@ export async function GET(req: NextRequest) {
   }
 
   const map = await fetchDesignMap();
-  const folderId = map[style];
-  if (!folderId) {
-    return NextResponse.json({ error: "No design folder for this style" }, { status: 404 });
+  const ref = map[style];
+  if (!ref) {
+    return NextResponse.json({ error: "No design for this style" }, { status: 404 });
   }
 
-  const files = await listFolderImages(folderId);
+  // A file ref is the common case (one image per style) — no listing needed.
+  const files = ref.t === "file"
+    ? [{ id: ref.id, name: `${style}`, mimeType: "image/jpeg" }]
+    : await listFolderImages(ref.id);
 
   if (p.get("list") === "1") {
     return NextResponse.json(
@@ -87,7 +90,7 @@ export async function GET(req: NextRequest) {
   }
 
   if (!files.length) {
-    return NextResponse.json({ error: "Folder has no images" }, { status: 404 });
+    return NextResponse.json({ error: "No images for this style" }, { status: 404 });
   }
 
   const img = await fetchImageBytes(files[0].id, size);

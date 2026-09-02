@@ -40,7 +40,13 @@ export async function GET(req: NextRequest) {
     const data = runProcessor(rows);
 
     // Design thumbnails (optional feature — absent env vars ⇒ empty map).
-    const designs = await fetchDesignMap(force);
+    // Only the *style numbers that have an image and actually appear in the
+    // orders* are sent: the client needs presence, not Drive IDs (the image
+    // route resolves those server-side), and the catalogue is much larger
+    // than the order book.
+    const designMap = await fetchDesignMap(force);
+    const ordered = new Set(data.raw.map((r) => r.sn));
+    const designStyles = Object.keys(designMap).filter((sn) => ordered.has(sn));
 
     // The template lives in a blob-URL iframe (opaque origin), so it can't use
     // relative URLs or send our cookie. Give it an absolute base + a signed
@@ -61,9 +67,9 @@ export async function GET(req: NextRequest) {
       // A technical user opening dev tools could read these codes.
       _master_code:   process.env.MASTER_UNLOCK_CODE   || "",
       _customer_code: process.env.CUSTOMER_UNLOCK_CODE || "",
-      // Design thumbnails: style number → Drive folder ID, plus how to reach
-      // the image route from inside the opaque-origin iframe.
-      _designs:       designs,
+      // Design thumbnails: which styles have an image, plus how to reach the
+      // image route from inside the opaque-origin iframe.
+      _designs:       designStyles,
       _design_base:   designsConfigured() ? `${origin}/api/design` : "",
       _design_token:  designsConfigured() ? mintDesignToken(session.user.email) : "",
     };
