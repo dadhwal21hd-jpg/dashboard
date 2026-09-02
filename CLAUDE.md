@@ -96,6 +96,30 @@ The lock is **visual only**: `DATA`, including the unlock codes
 (`_master_code`, `_customer_code` from env), is in the client payload. Do not
 present it as a security boundary.
 
+## Design thumbnails
+
+Optional feature, off unless `GOOGLE_DESIGNS_SHEET_ID` is set. A separate
+spreadsheet maps style number → Drive folder;
+[src/lib/designs.ts](src/lib/designs.ts) reads it (10-min cache, fuzzy headers,
+`extractFolderId()` accepts URLs or bare IDs) and
+[src/lib/drive.ts](src/lib/drive.ts) lists folder images and streams bytes.
+
+**The non-obvious part:** the template runs in a blob-URL iframe, so it has an
+*opaque origin* — relative URLs don't resolve and the NextAuth cookie is not
+sent on subresource requests. So `/api/design` is authorised by an HMAC token
+([src/lib/signing.ts](src/lib/signing.ts)) minted into `DATA._design_token`,
+and `DATA._design_base` carries the absolute origin. Any future feature that
+loads a URL from inside the template hits this same wall.
+
+Client side: `designThumb(sn, 'sm'|'md')` renders a cell (empty string when the
+feature is off, hatched placeholder when the style has no folder);
+`openDesign(sn)` opens the `#dz` lightbox, which lists the folder via
+`?list=1` and pages through it. Designs are deliberately **not** redacted by
+`LOCK_MODE` — see the note in the stylesheet.
+
+Every failure path degrades to "no thumbnail", never to an error: a broken
+mapping sheet or unshared folder must not take the dashboard down.
+
 ## Customer clusters
 
 [src/lib/clusters.ts](src/lib/clusters.ts) hand-maps duplicate/related customer

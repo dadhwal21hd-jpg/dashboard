@@ -14,6 +14,7 @@
  */
 import { google } from "googleapis";
 import type { SheetRow } from "./types";
+import { buildAuth, getEnv, SCOPE_SHEETS } from "./google";
 
 interface CacheEntry {
   data: SheetRow[];
@@ -22,29 +23,6 @@ interface CacheEntry {
 
 let cache: CacheEntry | null = null;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
-function getEnv(name: string, required = true): string {
-  const v = process.env[name];
-  if (!v && required) {
-    throw new Error(`Missing required env var: ${name}`);
-  }
-  return v ?? "";
-}
-
-function buildAuth() {
-  const email = getEnv("GOOGLE_SERVICE_ACCOUNT_EMAIL");
-  // Vercel env vars can't contain real newlines; we accept either:
-  //  - JSON-escaped newlines (literal \n) — recommended
-  //  - real newlines (if you paste from a file)
-  const rawKey = getEnv("GOOGLE_SERVICE_ACCOUNT_KEY");
-  const privateKey = rawKey.replace(/\\n/g, "\n");
-
-  return new google.auth.JWT({
-    email,
-    key: privateKey,
-    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
-  });
-}
 
 /**
  * Fetch rows from the configured Google Sheet.
@@ -58,7 +36,7 @@ export async function fetchSheetRows(force = false): Promise<{ rows: SheetRow[];
   const sheetId = getEnv("GOOGLE_SHEET_ID");
   const range = process.env.GOOGLE_SHEET_RANGE || "Sheet1";
 
-  const auth = buildAuth();
+  const auth = buildAuth([SCOPE_SHEETS]);
   const sheets = google.sheets({ version: "v4", auth });
 
   const res = await sheets.spreadsheets.values.get({

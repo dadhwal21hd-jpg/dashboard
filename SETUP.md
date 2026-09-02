@@ -206,6 +206,79 @@ Now visit your Vercel URL, sign in, and the live dashboard loads.
 
 ---
 
+## Design thumbnails (optional)
+
+Shows the design image next to each style number, in the Style Numbers tab and
+in the customer drill-downs. Clicking one opens a full-size viewer that browses
+every image in that style's Drive folder.
+
+Skip this section and everything works exactly as before — thumbnails simply
+don't render.
+
+### a. The mapping sheet
+
+A spreadsheet (separate from the orders sheet) with one row per style:
+
+| Style Number | Drive Folder Link |
+|--------------|-------------------|
+| 1234 | https://drive.google.com/drive/folders/1AbC… |
+| 1235 | 1XyZ… |
+
+- Header names are matched loosely — `Style No.`, `Folder`, `Drive Link`, `URL`
+  and similar all work. If the headers aren't recognised, the first column is
+  taken as the style and the first column that looks like a Drive link as the
+  folder.
+- The link cell accepts a full folder URL (`/folders/<id>`, `?id=<id>`) or a
+  bare folder ID.
+- Style numbers must match the orders sheet exactly (trimmed).
+
+**Share this spreadsheet with the service-account email as Viewer**, same as in
+step 5.
+
+### b. Give the service account access to the designs
+
+1. In Google Cloud Console → **APIs & Services → Library** → search
+   **Google Drive API** → **Enable**. (Same project as the Sheets API.)
+2. In Drive, right-click the **parent folder** that holds all the design
+   folders → **Share** → paste the service-account email → **Viewer** → Send.
+   Sharing the parent cascades to every subfolder, so you only do this once.
+
+No sharing settings need to be loosened — the folders stay private. Images are
+fetched server-side by the service account and streamed through
+`/api/design`, which is gated by a signed, expiring token.
+
+### c. Env vars
+
+| Variable | Value |
+|---|---|
+| `GOOGLE_DESIGNS_SHEET_ID` | the mapping spreadsheet's ID (the long string between `/d/` and `/edit`) |
+| `GOOGLE_DESIGNS_RANGE` | optional; tab name, defaults to `Sheet1` |
+
+Add them to `.env.local` and to Vercel → Settings → Environment Variables, then
+redeploy.
+
+**If you're using a new service account for this**, it needs access to *both*
+sheets and the design folders — either replace `GOOGLE_SERVICE_ACCOUNT_EMAIL` /
+`GOOGLE_SERVICE_ACCOUNT_KEY` and re-share the orders sheet with it, or keep the
+existing one and share the new material with that.
+
+### d. Checking it works
+
+Sign in, open the Style Numbers tab, expand a sub cut group. Styles present in
+the mapping sheet show a thumbnail; unmapped ones show a hatched placeholder.
+If every thumbnail is a placeholder, the usual causes are, in order:
+
+1. `GOOGLE_DESIGNS_SHEET_ID` not set (or not redeployed) — no mapping at all.
+2. Mapping sheet not shared with the service account.
+3. Drive API not enabled, or the design folders not shared with it.
+4. Style numbers formatted differently in the two sheets (e.g. `1234` vs `1234 `
+   or `#1234`).
+
+Vercel's function logs name the failing step — `Design map fetch failed` for
+1–2, `Drive list failed for folder …` for 3.
+
+---
+
 ## Adding or removing users later
 
 Just update the `ALLOWED_EMAILS` env var:

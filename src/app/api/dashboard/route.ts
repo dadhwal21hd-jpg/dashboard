@@ -20,6 +20,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { fetchSheetRows } from "@/lib/sheets";
 import { process as runProcessor } from "@/lib/processor";
+import { fetchDesignMap, designsConfigured } from "@/lib/designs";
+import { mintDesignToken } from "@/lib/signing";
 
 export const dynamic = "force-dynamic"; // never statically cache this route
 
@@ -37,6 +39,14 @@ export async function GET(req: NextRequest) {
     const { rows, fetchedAt, fromCache } = await fetchSheetRows(force);
     const data = runProcessor(rows);
 
+    // Design thumbnails (optional feature — absent env vars ⇒ empty map).
+    const designs = await fetchDesignMap(force);
+
+    // The template lives in a blob-URL iframe (opaque origin), so it can't use
+    // relative URLs or send our cookie. Give it an absolute base + a signed
+    // token instead. See src/lib/signing.ts.
+    const origin = req.nextUrl.origin;
+
     // ── Load template and inject ──────────────────────────────────────────
     const templatePath = path.join(process.cwd(), "public", "dashboard_template.html");
     const template = await readFile(templatePath, "utf-8");
@@ -51,6 +61,11 @@ export async function GET(req: NextRequest) {
       // A technical user opening dev tools could read these codes.
       _master_code:   process.env.MASTER_UNLOCK_CODE   || "",
       _customer_code: process.env.CUSTOMER_UNLOCK_CODE || "",
+      // Design thumbnails: style number → Drive folder ID, plus how to reach
+      // the image route from inside the opaque-origin iframe.
+      _designs:       designs,
+      _design_base:   designsConfigured() ? `${origin}/api/design` : "",
+      _design_token:  designsConfigured() ? mintDesignToken(session.user.email) : "",
     };
 
     const injected = template.replace(

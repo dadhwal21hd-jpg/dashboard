@@ -140,6 +140,38 @@ select:focus,input:focus{outline:none;border-color:var(--accent);}
 .sn-v-weak{background:#e8eef7;border:1px solid #baccdf;color:#4a6fa5;}
 .sn-v-thin{background:#fbeaea;border:1px solid #e8c0c0;color:#c0392b;}
 
+/* ─── DESIGN THUMBNAILS ──────────────────────────────────────────── */
+.dt{display:inline-block;position:relative;border-radius:5px;overflow:hidden;background:#f0ede8;border:1px solid var(--border);flex:none;cursor:zoom-in;vertical-align:middle;}
+.dt img{display:block;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .25s;}
+.dt img.loaded{opacity:1;}
+.dt.dt-empty{cursor:default;background:repeating-linear-gradient(45deg,#f4f1ec,#f4f1ec 4px,#efebe4 4px,#efebe4 8px);}
+.dt-ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text3);}
+.dt-n{position:absolute;right:1px;bottom:1px;background:rgba(0,0,0,.6);color:#fff;font-family:'IBM Plex Mono',monospace;font-size:8px;padding:0 3px;border-radius:2px;}
+.dt-sm{width:34px;height:44px;}
+.dt-md{width:52px;height:66px;}
+
+/* NOTE: designs are NOT redacted in locked mode. The lock hides *who buys what
+   and for how much*; a style's own design image identifies no customer. To
+   redact them too, uncomment:
+   body.locked .dt img{filter:blur(7px) saturate(.4);} */
+
+/* Lightbox */
+#dz{display:none;position:fixed;inset:0;z-index:9000;background:rgba(28,25,23,.88);backdrop-filter:blur(3px);align-items:center;justify-content:center;}
+#dz.open{display:flex;}
+.dz-box{background:var(--card,#fff);border-radius:10px;overflow:hidden;max-width:min(92vw,860px);max-height:90vh;display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,.4);}
+.dz-hdr{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 14px;border-bottom:1px solid var(--border);}
+.dz-title{font-family:'IBM Plex Mono',monospace;font-weight:700;color:var(--accent);font-size:14px;}
+.dz-sub{font-size:10px;color:var(--text3);font-family:'IBM Plex Mono',monospace;}
+.dz-x{background:none;border:none;font-size:20px;line-height:1;color:var(--text3);cursor:pointer;padding:0 4px;}
+.dz-x:hover{color:var(--text);}
+.dz-stage{position:relative;display:flex;align-items:center;justify-content:center;background:#faf9f7;min-height:260px;padding:10px;}
+.dz-stage img{max-width:100%;max-height:64vh;object-fit:contain;border-radius:4px;}
+.dz-nav{position:absolute;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.92);border:1px solid var(--border);border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:15px;color:var(--text2);}
+.dz-nav:hover{border-color:var(--accent);color:var(--accent);}
+.dz-prev{left:10px;} .dz-next{right:10px;}
+.dz-ft{padding:8px 14px;font-size:10px;color:var(--text3);font-family:'IBM Plex Mono',monospace;border-top:1px solid var(--border);display:flex;justify-content:space-between;gap:10px;}
+.dz-ft a{color:var(--accent);text-decoration:none;}
+
 /* ─── CLUSTERS ───────────────────────────────────────────────────── */
 .cl-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
 .cl-card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px;box-shadow:var(--sh);transition:all .15s;}
@@ -818,6 +850,18 @@ body.customer-mode tr.cust-revealed::before{
   </div>
   <div class="card-wide" style="padding:0">
     <table class="data-table"><thead><tr><th>#</th><th>Sub Cut</th><th>Units</th><th>Revenue</th><th>Rev/Unit</th><th>Customers</th><th>All Variants</th><th>Status</th></tr></thead><tbody id="sc-tbody"></tbody></table>
+  </div>
+</div>
+
+<!-- DESIGN LIGHTBOX (shared by every tab) -->
+<div id="dz" onclick="if(event.target===this)closeDesign()">
+  <div class="dz-box">
+    <div class="dz-hdr">
+      <div><span class="dz-title" id="dz-title"></span> <span class="dz-sub" id="dz-sub"></span></div>
+      <button class="dz-x" onclick="closeDesign()" title="Close (Esc)">×</button>
+    </div>
+    <div class="dz-stage" id="dz-stage"></div>
+    <div class="dz-ft"><span id="dz-file"></span><span>← → to browse · Esc to close</span></div>
   </div>
 </div>
 
@@ -1687,7 +1731,7 @@ function renderSG() {
       const star=s.qty>=40?'<span class="badge bg" style="font-size:9px;padding:1px 5px">⭐</span>':s.qty>=25?'<span class="badge br" style="font-size:9px;padding:1px 5px">🔥</span>':'';
       return`<tr class="sn-row" data-style="${esc(s.n)}" onclick="toggleStyleCust(this)" title="Click to see which customers bought this style">
         <td style="color:var(--text3);font-family:IBM Plex Mono,monospace;font-size:11px;padding:7px 12px;width:32px"><span class="sn-chev">▸</span>${i+1}</td>
-        <td style="padding:7px 12px"><strong style="font-family:IBM Plex Mono,monospace;color:${col}">#${s.n}</strong></td>
+        <td style="padding:5px 12px"><div style="display:flex;align-items:center;gap:9px">${designThumb(s.n,'sm')}<strong style="font-family:IBM Plex Mono,monospace;color:${col}">#${s.n}</strong></div></td>
         <td style="padding:7px 12px"><div style="display:flex;align-items:center;gap:8px"><div style="width:100px;background:#f0ede8;height:6px;border-radius:3px"><div style="width:${pct}%;height:100%;background:${col};border-radius:3px;opacity:.75"></div></div><strong style="font-family:IBM Plex Mono,monospace;font-size:13px;color:${col};min-width:24px">${s.qty}</strong>${star}</div></td>
         <td style="text-align:right;font-family:IBM Plex Mono,monospace;font-size:12px;color:var(--text2);padding:7px 12px">${fmt(s.rev)}</td>
         <td style="text-align:right;font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--text3);padding:7px 12px">${s.price?'₹'+fN(s.price):'—'}</td>
@@ -1797,6 +1841,9 @@ function styleBuyersHTML(sn) {
   }).join('');
 
   return `
+    <div style="display:flex;gap:12px;align-items:flex-start">
+    ${hasDesign(sn) ? `<div style="flex:none">${designThumb(sn,'md')}</div>` : ''}
+    <div style="flex:1;min-width:0">
     <div class="sn-summary">
       <span class="sn-verdict sn-v-${head.k}" title="${head.t}">${head.l}</span>
       <span class="sn-chip">${buyers.length} buyer${buyers.length===1?'':'s'}</span>
@@ -1817,7 +1864,8 @@ function styleBuyersHTML(sn) {
         <th style="text-align:right">Verdict</th>
       </tr></thead>
       <tbody>${rows}</tbody>
-    </table>`;
+    </table>
+    </div></div>`;
 }
 
 function toggleStyleCust(rowEl) {
@@ -2089,7 +2137,7 @@ function redrawStyleTable() {
     const globalBadge = `<span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:${isHit?'#2a8a72':'#9c978e'};font-weight:${isHit?700:400}" title="Total sold to all customers">${fN(gQty)} pcs${isHit?' 🌍':''}</span>`;
     return`<tr>
       <td style="color:var(--text3);font-size:11px;font-family:'IBM Plex Mono',monospace;padding:7px 10px">${i+1}</td>
-      <td style="padding:7px 10px;font-family:'IBM Plex Mono',monospace;font-weight:700;color:${col}">#${s.n}</td>
+      <td style="padding:5px 10px"><div style="display:flex;align-items:center;gap:8px">${designThumb(s.n,'sm')}<span style="font-family:'IBM Plex Mono',monospace;font-weight:700;color:${col}">#${s.n}</span></div></td>
       <td style="padding:7px 10px"><div style="display:flex;align-items:center;gap:8px">
         <div style="width:80px;background:#f0ede8;height:6px;border-radius:3px"><div style="width:${pct}%;height:100%;background:${col};border-radius:3px;opacity:.75"></div></div>
         <strong style="font-family:'IBM Plex Mono',monospace;color:${col}">${s.qty} pcs</strong>
@@ -2473,6 +2521,89 @@ function showErr(msg) { const el=document.getElementById('upload-err'); el.textC
 
 document.getElementById('drop-zone').addEventListener('dragover', e=>e.preventDefault());
 document.getElementById('drop-zone').addEventListener('drop', e=>{e.preventDefault();handleFile(e.dataTransfer.files[0]);});
+
+// ══════════════════════════════════════════════════════════════
+// DESIGN THUMBNAILS
+// D._designs maps style number → Drive folder ID; images are served by
+// /api/design. Absolute URLs + a signed token because this page runs from a
+// blob URL (opaque origin) — relative paths and cookies don't work here.
+// ══════════════════════════════════════════════════════════════
+function designsOn(){ return !!(D && D._design_base && D._design_token); }
+function hasDesign(sn){ return designsOn() && !!(D._designs && D._designs[String(sn)]); }
+
+function designURL(params){
+  const q = new URLSearchParams({...params, t: D._design_token});
+  return `${D._design_base}?${q.toString()}`;
+}
+
+/** Thumbnail cell. `size` is 'sm' | 'md'. Renders a placeholder when the
+ *  style has no folder, so table columns stay aligned. */
+function designThumb(sn, size){
+  const cls = size === 'md' ? 'dt-md' : 'dt-sm';
+  if (!designsOn()) return '';   // feature off entirely — don't leave gaps in the layout
+  if (!hasDesign(sn)) {
+    return `<span class="dt ${cls} dt-empty" title="No design folder mapped for #${esc(sn)}"><span class="dt-ph">—</span></span>`;
+  }
+  const src = designURL({style: sn, sz: size === 'md' ? 'w220' : 'w160'});
+  return `<span class="dt ${cls}" onclick="event.stopPropagation();openDesign('${esc(String(sn)).replace(/'/g,"\\'")}')" title="Design for #${esc(sn)} — click to enlarge">
+    <span class="dt-ph">◌</span>
+    <img loading="lazy" src="${src}" alt="Design ${esc(sn)}"
+         onload="this.classList.add('loaded')"
+         onerror="this.closest('.dt').classList.add('dt-empty');this.remove()">
+  </span>`;
+}
+
+// ── Lightbox ──────────────────────────────────────────────────
+let _dzFiles = [], _dzIdx = 0, _dzStyle = '';
+
+function openDesign(sn){
+  if (!hasDesign(sn)) return;
+  _dzStyle = String(sn); _dzFiles = []; _dzIdx = 0;
+  document.getElementById('dz-title').textContent = '#' + _dzStyle;
+  document.getElementById('dz-sub').textContent = 'loading…';
+  document.getElementById('dz-stage').innerHTML = '<div style="color:var(--text3);font-size:12px">Fetching design…</div>';
+  document.getElementById('dz').classList.add('open');
+
+  fetch(designURL({style: _dzStyle, list: '1'}))
+    .then(r => r.ok ? r.json() : Promise.reject(r.status))
+    .then(j => { _dzFiles = j.files || []; dzDraw(); })
+    .catch(() => {
+      document.getElementById('dz-sub').textContent = '';
+      document.getElementById('dz-stage').innerHTML =
+        '<div style="color:var(--text3);font-size:12px;text-align:center;padding:20px">Could not load this design.<br><span style="font-size:10px">Check the folder is shared with the service account.</span></div>';
+    });
+}
+
+function dzDraw(){
+  const stage = document.getElementById('dz-stage');
+  if (!_dzFiles.length) {
+    document.getElementById('dz-sub').textContent = '0 images';
+    stage.innerHTML = '<div style="color:var(--text3);font-size:12px;padding:20px">This folder has no images.</div>';
+    return;
+  }
+  const f = _dzFiles[_dzIdx];
+  document.getElementById('dz-sub').textContent = `${_dzIdx+1} / ${_dzFiles.length}`;
+  const nav = _dzFiles.length > 1
+    ? `<button class="dz-nav dz-prev" onclick="dzStep(-1)">‹</button><button class="dz-nav dz-next" onclick="dzStep(1)">›</button>`
+    : '';
+  stage.innerHTML = `${nav}<img src="${designURL({file: f.id, sz: 'w1200'})}" alt="${esc(f.name)}">`;
+  document.getElementById('dz-file').textContent = f.name || '';
+}
+
+function dzStep(n){
+  if (!_dzFiles.length) return;
+  _dzIdx = (_dzIdx + n + _dzFiles.length) % _dzFiles.length;
+  dzDraw();
+}
+
+function closeDesign(){ document.getElementById('dz').classList.remove('open'); }
+
+document.addEventListener('keydown', e => {
+  if (!document.getElementById('dz')?.classList.contains('open')) return;
+  if (e.key === 'Escape') closeDesign();
+  if (e.key === 'ArrowLeft') dzStep(-1);
+  if (e.key === 'ArrowRight') dzStep(1);
+});
 
 // If data was injected by process_csv.py, auto-load it
 /*__DATA__*/
