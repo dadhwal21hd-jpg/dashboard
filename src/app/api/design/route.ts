@@ -16,7 +16,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { verifyDesignToken } from "@/lib/signing";
-import { fetchDesignMap } from "@/lib/designs";
+import { fetchDesignMap, extractSheetId } from "@/lib/designs";
 import { listFolderImages, fetchImageBytes } from "@/lib/drive";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +49,33 @@ export async function GET(req: NextRequest) {
 
   const p = req.nextUrl.searchParams;
   const size = SZ_RE.test(p.get("sz") ?? "") ? p.get("sz")! : "w400";
+
+  // ── Diagnostics: ?diag=1 (optionally &style=…) ───────────────────────────
+  // Reports what this *deployment* actually sees, so a config problem can be
+  // told apart from a data problem without reading server logs.
+  if (p.get("diag") === "1") {
+    const ids = (process.env.GOOGLE_DESIGNS_SHEET_ID ?? "")
+      .split(",").map((s) => s.trim()).filter(Boolean);
+    const ranges = (process.env.GOOGLE_DESIGNS_RANGE ?? "")
+      .split(",").map((s) => s.trim()).filter(Boolean);
+    const map = await fetchDesignMap(p.get("refresh") === "1");
+    const keys = Object.keys(map);
+    const wanted = (p.get("style") ?? "").trim();
+
+    return NextResponse.json({
+      catalogues_configured: ids.length,
+      catalogue_ids: ids.map((id) => extractSheetId(id).slice(0, 10) + "…"),
+      ranges,
+      designs_service_account: process.env.GOOGLE_DESIGNS_SERVICE_ACCOUNT_EMAIL
+        ? "separate account configured"
+        : "falling back to the orders service account",
+      styles_mapped: keys.length,
+      sample_styles: keys.slice(0, 5),
+      // 9xxx is the KK series; if this is 0 the KK catalogue is not loading.
+      kk_series_9xxx_mapped: keys.filter((k) => /^9\d{3}$/.test(k)).length,
+      style_lookup: wanted ? { style: wanted, found: map[wanted] ?? null } : undefined,
+    }, { headers: { "Cache-Control": "no-store" } });
+  }
 
   // ── Direct file fetch ────────────────────────────────────────────────────
   const fileId = p.get("file");
