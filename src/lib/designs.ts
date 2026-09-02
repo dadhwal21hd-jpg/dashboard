@@ -178,6 +178,15 @@ export async function fetchDesignMap(force = false): Promise<DesignMap> {
       if (ref) map[style] = ref;
     }
 
+    // The catalogue zero-pads some codes ("00513") where the orders sheet
+    // doesn't ("513"). Add the unpadded form as an alias, but never overwrite
+    // a code that genuinely exists in its own right.
+    for (const code of Object.keys(map)) {
+      if (!/^0\d+$/.test(code)) continue;
+      const stripped = code.replace(/^0+/, "");
+      if (stripped && !map[stripped]) map[stripped] = map[code];
+    }
+
     console.log(
       `Design map: ${Object.keys(map).length} styles from "${headers[styleCol]}" → "${headers[linkCol]}"`,
     );
