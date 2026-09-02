@@ -257,14 +257,27 @@ gated by a signed, expiring token.
 
 | Variable | Value |
 |---|---|
-| `GOOGLE_DESIGNS_SHEET_ID` | the catalogue spreadsheet's ID — a full `docs.google.com/…` URL is also accepted |
-| `GOOGLE_DESIGNS_RANGE` | tab name; defaults to `Sheet1`. Spaces are fine (`Product Data`) — it's quoted automatically |
+| `GOOGLE_DESIGNS_SHEET_ID` | the catalogue spreadsheet's ID — a full `docs.google.com/…` URL is also accepted. **Comma-separate several** to merge more than one branch's catalogue |
+| `GOOGLE_DESIGNS_RANGE` | tab name; defaults to `Sheet1`. Spaces are fine (`Product Data`) — it's quoted automatically. Give one name for all sheets, or a comma-separated list matching the IDs in order |
 | `GOOGLE_DESIGNS_SERVICE_ACCOUNT_EMAIL` | optional. Set when the designs live under a *different* service account / Cloud project than the orders sheet |
 | `GOOGLE_DESIGNS_SERVICE_ACCOUNT_KEY` | optional; the matching private key, with newlines as literal `\n`, wrapped in double quotes |
 
 If the two `GOOGLE_DESIGNS_SERVICE_ACCOUNT_*` vars are absent, the main service
 account is used for the catalogue and the images too — in which case it needs
 access to both.
+
+**Several catalogues** (one per branch) are merged into one map. Both forms:
+
+```
+GOOGLE_DESIGNS_SHEET_ID=1310gdPt…,1AbCdEf…
+GOOGLE_DESIGNS_RANGE=Product Data              # same tab name in both
+GOOGLE_DESIGNS_RANGE=Product Data,Sheet1       # or one per sheet, in order
+```
+
+Where two catalogues list the same style code, **the first one wins** — put the
+more trusted catalogue first. Every sheet must be shared with the designs
+service account; one that isn't is logged and skipped, and the others still
+load.
 
 Add them to `.env.local` and to Vercel → Settings → Environment Variables, then
 redeploy.

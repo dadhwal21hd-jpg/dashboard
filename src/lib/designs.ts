@@ -107,24 +107,21 @@ export function designsConfigured(): boolean {
 }
 
 /**
- * Fetch the style → image map. Never throws: thumbnails are a nice-to-have and
- * must not be able to take the dashboard down.
+ * Read one catalogue into a map. Returns {} rather than throwing, so one bad
+ * source can't take out the others.
  */
-export async function fetchDesignMap(force = false): Promise<DesignMap> {
-  if (!designsConfigured()) return {};
-  if (!force && cache && Date.now() - cache.fetchedAt < CACHE_TTL_MS) return cache.map;
-
+async function readOneCatalogue(sheetId: string, range: string, label: string): Promise<DesignMap> {
   try {
     const sheets = google.sheets({ version: "v4", auth: buildDesignsAuth([SCOPE_SHEETS]) });
     const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: extractSheetId(process.env.GOOGLE_DESIGNS_SHEET_ID!),
-      range: quoteRange(process.env.GOOGLE_DESIGNS_RANGE || "Sheet1"),
+      spreadsheetId: extractSheetId(sheetId),
+      range: quoteRange(range),
       valueRenderOption: "FORMATTED_VALUE",
     });
 
     const rows = (res.data.values ?? []) as string[][];
     if (rows.length < 2) {
-      cache = { map: {}, fetchedAt: Date.now() };
+      console.error(`Design map ${label}: sheet is empty`);
       return {};
     }
 
@@ -142,8 +139,7 @@ export async function fetchDesignMap(force = false): Promise<DesignMap> {
       linkCol = bestScore > 0 ? best : -1;
     }
     if (linkCol === -1) {
-      console.error("Design map: no column contains Drive links");
-      cache = { map: {}, fetchedAt: Date.now() };
+      console.error(`Design map ${label}: no column contains Drive links`);
       return {};
     }
 
@@ -165,8 +161,7 @@ export async function fetchDesignMap(force = false): Promise<DesignMap> {
       styleCol = best;
     }
     if (styleCol === -1) {
-      console.error("Design map: could not identify a style column");
-      cache = { map: {}, fetchedAt: Date.now() };
+      console.error(`Design map ${label}: could not identify a style column`);
       return {};
     }
 
@@ -188,16 +183,59 @@ export async function fetchDesignMap(force = false): Promise<DesignMap> {
     }
 
     console.log(
-      `Design map: ${Object.keys(map).length} styles from "${headers[styleCol]}" → "${headers[linkCol]}"`,
+      `Design map ${label}: ${Object.keys(map).length} styles from "${headers[styleCol]}" → "${headers[linkCol]}"`,
     );
-    cache = { map, fetchedAt: Date.now() };
     return map;
   } catch (err) {
-    console.error("Design map fetch failed:", err instanceof Error ? err.message : err);
-    // Cache the empty result briefly so a broken sheet doesn't hammer the API.
-    cache = { map: {}, fetchedAt: Date.now() };
+    console.error(`Design map ${label} failed:`, err instanceof Error ? err.message : err);
     return {};
   }
+}
+
+/**
+ * Fetch the merged style → image map across every configured catalogue.
+ *
+ * Several catalogues are supported because the business keeps one per branch —
+ * `GOOGLE_DESIGNS_SHEET_ID` takes a comma-separated list, and
+ * `GOOGLE_DESIGNS_RANGE` either one tab name for all of them or a matching
+ * comma-separated list. Earlier sources win on conflict, so put the most
+ * trusted catalogue first.
+ *
+ * Never throws: thumbnails are a nice-to-have and must not be able to take the
+ * dashboard down.
+ */
+export async function fetchDesignMap(force = false): Promise<DesignMap> {
+  if (!designsConfigured()) return {};
+  if (!force && cache && Date.now() - cache.fetchedAt < CACHE_TTL_MS) return cache.map;
+
+  const ids = (process.env.GOOGLE_DESIGNS_SHEET_ID ?? "")
+    .split(",").map((s) => s.trim()).filter(Boolean);
+  const ranges = (process.env.GOOGLE_DESIGNS_RANGE ?? "")
+    .split(",").map((s) => s.trim()).filter(Boolean);
+
+  const results = await Promise.all(
+    ids.map((id, i) => readOneCatalogue(
+      id,
+      // One range ⇒ it applies to every sheet; otherwise match positionally.
+      ranges.length === 1 ? ranges[0] : (ranges[i] || "Sheet1"),
+      ids.length > 1 ? `#${i + 1}` : "",
+    )),
+  );
+
+  // Merge, first source wins.
+  const map: DesignMap = {};
+  let added = 0;
+  for (const part of results) {
+    for (const [style, ref] of Object.entries(part)) {
+      if (!map[style]) { map[style] = ref; added++; }
+    }
+  }
+  if (ids.length > 1) {
+    console.log(`Design map: ${added} styles merged from ${ids.length} catalogues`);
+  }
+
+  cache = { map, fetchedAt: Date.now() };
+  return map;
 }
 
 export function clearDesignCache(): void {
