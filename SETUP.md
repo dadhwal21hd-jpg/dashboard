@@ -289,10 +289,12 @@ redeploy.
 ### d. Checking it works
 
 Sign in, open the Style Numbers tab, expand a sub cut group. Styles present in
-the catalogue show a thumbnail; the rest show a hatched placeholder. **Expect
-gaps** — as of the last check, 4,950 of 7,848 ordered styles (63%) have an
-image; the unmatched ones are the older low-numbered codes the catalogue
-doesn't cover.
+a catalogue show a thumbnail; the rest show a hatched placeholder.
+
+With both branch catalogues configured, coverage measured **7,869 of 8,077
+ordered styles (97.4%), and 99.0% of units**. The ~200 stragglers are
+low-volume (400 units between them). With only the R-studio catalogue it drops
+to 64% — if you see roughly that, the second sheet isn't being read.
 
 If *every* thumbnail is a placeholder, the usual causes in order:
 

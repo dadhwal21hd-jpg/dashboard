@@ -103,12 +103,18 @@ product-catalogue spreadsheet maps style code → Drive image;
 [src/lib/designs.ts](src/lib/designs.ts) reads it (10-min cache) and
 [src/lib/drive.ts](src/lib/drive.ts) fetches bytes.
 
-Real shape of that data, which the code is built around: the catalogue's
-`Item Code` joins to the orders sheet's `Style Number` (~63% of ordered styles
-have an image), and the links are **direct file links**, one per style — folder
-links are supported but don't occur. Column detection is evidence-based, not
-header-only: the sheet has a populated `Image` column *and* an empty `Photo`
-column, and header matching alone picks the wrong one.
+Real shape of that data, which the code is built around: each catalogue's
+`Item Code` joins to the orders sheet's `Style Number`, and the links are
+**direct file links**, one per style — folder links are supported but don't
+occur. Column detection is evidence-based, not header-only: the sheets have a
+populated `Image` column *and* an empty `Photo` column (and the second one has
+duplicate and blank headers), so header matching alone picks the wrong column.
+
+There is **one catalogue per branch** — `GOOGLE_DESIGNS_SHEET_ID` is a
+comma-separated list, merged first-source-wins, each sheet detected
+independently. Both together cover 97% of ordered styles and 99% of units;
+either alone covers only a third to two thirds, since the two barely overlap
+(350 codes in common).
 
 The designs often live under a **different service account and Cloud project**
 than the orders sheet, hence `buildDesignsAuth()` in
