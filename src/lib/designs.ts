@@ -21,14 +21,15 @@
  * like Drive links.
  */
 import { google } from "googleapis";
+import { unstable_cache, revalidateTag } from "next/cache";
 import { buildDesignsAuth, SCOPE_SHEETS } from "./google";
 
 export type DesignRef = { t: "file" | "folder"; id: string };
 /** style number (trimmed) → the Drive image for it */
 export type DesignMap = Record<string, DesignRef>;
 
-const CACHE_TTL_MS = 10 * 60 * 1000; // designs change far less often than orders
-let cache: { map: DesignMap; fetchedAt: number } | null = null;
+const REVALIDATE_SECONDS = 10 * 60; // designs change far less often than orders
+const CACHE_TAG = "design-map";
 
 const STYLE_ALIASES = [
   "style number", "style_number", "style no", "style no.", "item code",
@@ -193,21 +194,11 @@ async function readOneCatalogue(sheetId: string, range: string, label: string): 
 }
 
 /**
- * Fetch the merged style → image map across every configured catalogue.
- *
- * Several catalogues are supported because the business keeps one per branch —
- * `GOOGLE_DESIGNS_SHEET_ID` takes a comma-separated list, and
- * `GOOGLE_DESIGNS_RANGE` either one tab name for all of them or a matching
- * comma-separated list. Earlier sources win on conflict, so put the most
- * trusted catalogue first.
- *
- * Never throws: thumbnails are a nice-to-have and must not be able to take the
- * dashboard down.
+ * Read every configured catalogue and merge them, first source wins.
+ * The expensive part — this function's body — is wrapped in a shared,
+ * cross-instance cache below; nothing here should be called directly.
  */
-export async function fetchDesignMap(force = false): Promise<DesignMap> {
-  if (!designsConfigured()) return {};
-  if (!force && cache && Date.now() - cache.fetchedAt < CACHE_TTL_MS) return cache.map;
-
+async function computeDesignMap(): Promise<DesignMap> {
   const ids = (process.env.GOOGLE_DESIGNS_SHEET_ID ?? "")
     .split(",").map((s) => s.trim()).filter(Boolean);
   const ranges = (process.env.GOOGLE_DESIGNS_RANGE ?? "")
@@ -233,11 +224,45 @@ export async function fetchDesignMap(force = false): Promise<DesignMap> {
   if (ids.length > 1) {
     console.log(`Design map: ${added} styles merged from ${ids.length} catalogues`);
   }
-
-  cache = { map, fetchedAt: Date.now() };
   return map;
 }
 
+/**
+ * Cached via Next's Data Cache (unstable_cache), not a plain module variable.
+ *
+ * Why this matters: a module-level cache is per lambda instance. Under a
+ * burst of concurrent requests, Vercel scales up many instances at once, and
+ * EVERY cold one used to redo both Sheets reads from scratch — a real
+ * scalability bug, not just a cold-start nuisance: it meant traffic growth
+ * multiplied load on Google's API rather than being absorbed by a cache. The
+ * Data Cache is shared across instances (and regions), so the expensive read
+ * happens roughly once per revalidate window, cluster-wide, however many
+ * instances are running.
+ */
+const cachedComputeDesignMap = unstable_cache(computeDesignMap, [CACHE_TAG], {
+  revalidate: REVALIDATE_SECONDS,
+  tags: [CACHE_TAG],
+});
+
+/**
+ * Fetch the merged style → image map across every configured catalogue.
+ *
+ * Several catalogues are supported because the business keeps one per branch —
+ * `GOOGLE_DESIGNS_SHEET_ID` takes a comma-separated list, and
+ * `GOOGLE_DESIGNS_RANGE` either one tab name for all of them or a matching
+ * comma-separated list. Earlier sources win on conflict, so put the most
+ * trusted catalogue first.
+ *
+ * Never throws: thumbnails are a nice-to-have and must not be able to take the
+ * dashboard down.
+ */
+export async function fetchDesignMap(force = false): Promise<DesignMap> {
+  if (!designsConfigured()) return {};
+  // Next 16's revalidateTag takes a profile; {expire: 0} means "stale now".
+  if (force) revalidateTag(CACHE_TAG, { expire: 0 });
+  return cachedComputeDesignMap();
+}
+
 export function clearDesignCache(): void {
-  cache = null;
+  revalidateTag(CACHE_TAG, { expire: 0 });
 }

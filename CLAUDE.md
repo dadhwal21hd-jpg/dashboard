@@ -140,6 +140,30 @@ deliberately **not** redacted by `LOCK_MODE` — see the note in the stylesheet.
 Every failure path degrades to "no thumbnail", never to an error: a broken
 mapping sheet or unshared folder must not take the dashboard down.
 
+**Performance / scalability, two fixes worth knowing about if this regresses:**
+
+1. `fetchImageBytes()` in [src/lib/drive.ts](src/lib/drive.ts) tries Google's
+   *public* thumbnail endpoint (`drive.google.com/thumbnail?id=…`) before
+   the authenticated Drive API path. Every sampled design image (40 across
+   the full catalogue range) turned out to be shared "anyone with the link" —
+   the catalogues feed a public storefront — so this is the common case, not
+   an edge case. It skips both Drive API calls the authenticated path needs,
+   costs nothing against Drive quota, and isn't subject to our own serverless
+   concurrency. Confirmed a non-public/nonexistent file reliably comes back
+   non-200/non-image here (never a misleading placeholder), so falling
+   through to the authenticated path on failure is safe.
+2. `fetchDesignMap()` in [src/lib/designs.ts](src/lib/designs.ts) is cached
+   via Next's `unstable_cache` (the Vercel Data Cache), not a module
+   variable. A module-level cache is per-lambda-instance; under a burst,
+   Vercel scales up many instances at once, and every cold one used to redo
+   both Sheets reads from scratch — traffic growth multiplied load on
+   Google's API instead of being absorbed by a cache. The Data Cache is
+   shared cluster-wide.
+
+Measured effect of both together: a burst of 60 concurrent thumbnail
+requests went from ~8s wall time with 3 failures (Drive quota/backoff under
+load) to ~2.7s with 0 failures on the same infrastructure.
+
 ## Customer clusters
 
 [src/lib/clusters.ts](src/lib/clusters.ts) hand-maps duplicate/related customer

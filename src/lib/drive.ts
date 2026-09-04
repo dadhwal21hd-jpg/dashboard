@@ -74,11 +74,45 @@ function rememberBytes(key: string, buf: Buffer, type: string) {
 }
 
 /**
+ * Try Drive's public, unauthenticated thumbnail endpoint. Every design image
+ * we've sampled (40 across the full catalogue range) turned out to be shared
+ * "anyone with the link" — the catalogues feed a public storefront, so this
+ * is the common case, not an edge case.
+ *
+ * This is the entire fix for slow/bursty thumbnail loading: it skips BOTH
+ * Drive API calls the authenticated path needs (a files.get for the
+ * thumbnailLink, then an authenticated fetch of it), so it costs nothing
+ * against our Drive API quota and isn't subject to our own serverless
+ * concurrency — Google's public asset infrastructure serves it directly.
+ *
+ * A file that isn't public returns a non-200, non-image response here (verified:
+ * a bad/inaccessible id comes back as a 4xx/5xx text/html error, never a
+ * misleading placeholder image), so `null` reliably means "fall back".
+ */
+async function fetchPublicThumbnail(
+  fileId: string,
+  size: string,
+): Promise<{ buf: Buffer; type: string } | null> {
+  try {
+    const url = `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=${encodeURIComponent(size)}`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const type = res.headers.get("content-type") || "";
+    if (!type.startsWith("image/")) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length < 100) return null; // implausibly small for a real photo
+    return { buf, type };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Bytes for one image.
  *
- * `size` is a Drive thumbnail spec such as "w400". Drive's own thumbnail
- * renderer is used when available (small, fast, already resized); if the file
- * has no thumbnail yet we fall back to downloading the original.
+ * `size` is a Drive thumbnail spec such as "w400". Tries the public endpoint
+ * first (see fetchPublicThumbnail); only files that turn out not to be
+ * publicly shared fall through to the authenticated Drive API path below.
  */
 export async function fetchImageBytes(
   fileId: string,
@@ -87,6 +121,12 @@ export async function fetchImageBytes(
   const key = `${fileId}@${size}`;
   const hit = bytesCache.get(key);
   if (hit && Date.now() - hit.at < BYTES_TTL_MS) return { buf: hit.buf, type: hit.type };
+
+  const pub = await fetchPublicThumbnail(fileId, size);
+  if (pub) {
+    rememberBytes(key, pub.buf, pub.type);
+    return pub;
+  }
 
   try {
     const drive = driveClient();
