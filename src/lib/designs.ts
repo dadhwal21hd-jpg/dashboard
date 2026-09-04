@@ -108,104 +108,136 @@ export function designsConfigured(): boolean {
 }
 
 /**
- * Read one catalogue into a map. Returns {} rather than throwing, so one bad
- * source can't take out the others.
+ * Read one catalogue into a map. Throws on any failure — deliberately, unlike
+ * the rest of this module — so `computeDesignMap` can tell "this source is
+ * broken" apart from "this source is legitimately empty" and refuse to let a
+ * transient failure get cached. See the comment on cachedComputeDesignMap for
+ * why that distinction matters now.
  */
 async function readOneCatalogue(sheetId: string, range: string, label: string): Promise<DesignMap> {
-  try {
-    const sheets = google.sheets({ version: "v4", auth: buildDesignsAuth([SCOPE_SHEETS]) });
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: extractSheetId(sheetId),
-      range: quoteRange(range),
-      valueRenderOption: "FORMATTED_VALUE",
-    });
+  const sheets = google.sheets({ version: "v4", auth: buildDesignsAuth([SCOPE_SHEETS]) });
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: extractSheetId(sheetId),
+    range: quoteRange(range),
+    valueRenderOption: "FORMATTED_VALUE",
+  });
 
-    const rows = (res.data.values ?? []) as string[][];
-    if (rows.length < 2) {
-      console.error(`Design map ${label}: sheet is empty`);
-      return {};
-    }
-
-    const headers = rows[0].map((h) => String(h ?? "").trim());
-    const width = Math.max(...rows.slice(0, 50).map((r) => r?.length ?? 0));
-
-    // ── Link column: header hint, but only if the values back it up ────────
-    let linkCol = pickByHeader(headers, LINK_ALIASES);
-    if (linkCol === -1 || linkScore(rows, linkCol) === 0) {
-      let best = -1, bestScore = 0;
-      for (let c = 0; c < width; c++) {
-        const s = linkScore(rows, c);
-        if (s > bestScore) { bestScore = s; best = c; }
-      }
-      linkCol = bestScore > 0 ? best : -1;
-    }
-    if (linkCol === -1) {
-      console.error(`Design map ${label}: no column contains Drive links`);
-      return {};
-    }
-
-    // ── Style column: header hint, else the first non-link column that is
-    //    populated and reasonably unique across the sheet ──────────────────
-    let styleCol = pickByHeader(headers, STYLE_ALIASES);
-    if (styleCol === -1 || styleCol === linkCol) {
-      let best = -1, bestUnique = 0;
-      for (let c = 0; c < width; c++) {
-        if (c === linkCol) continue;
-        const seen = new Set<string>();
-        let filled = 0;
-        for (let i = 1; i < Math.min(rows.length, 200); i++) {
-          const v = String(rows[i]?.[c] ?? "").trim();
-          if (v) { filled++; seen.add(v); }
-        }
-        if (filled > 0 && seen.size > bestUnique) { bestUnique = seen.size; best = c; }
-      }
-      styleCol = best;
-    }
-    if (styleCol === -1) {
-      console.error(`Design map ${label}: could not identify a style column`);
-      return {};
-    }
-
-    const map: DesignMap = {};
-    for (let i = 1; i < rows.length; i++) {
-      const style = String(rows[i]?.[styleCol] ?? "").trim();
-      if (!style || map[style]) continue;   // first link per style wins
-      const ref = parseDriveRef(String(rows[i]?.[linkCol] ?? ""));
-      if (ref) map[style] = ref;
-    }
-
-    // The catalogue zero-pads some codes ("00513") where the orders sheet
-    // doesn't ("513"). Add the unpadded form as an alias, but never overwrite
-    // a code that genuinely exists in its own right.
-    for (const code of Object.keys(map)) {
-      if (!/^0\d+$/.test(code)) continue;
-      const stripped = code.replace(/^0+/, "");
-      if (stripped && !map[stripped]) map[stripped] = map[code];
-    }
-
-    console.log(
-      `Design map ${label}: ${Object.keys(map).length} styles from "${headers[styleCol]}" → "${headers[linkCol]}"`,
-    );
-    return map;
-  } catch (err) {
-    console.error(`Design map ${label} failed:`, err instanceof Error ? err.message : err);
-    return {};
+  const rows = (res.data.values ?? []) as string[][];
+  if (rows.length < 2) {
+    throw new Error(`Design map ${label}: sheet is empty`);
   }
+
+  const headers = rows[0].map((h) => String(h ?? "").trim());
+  const width = Math.max(...rows.slice(0, 50).map((r) => r?.length ?? 0));
+
+  // ── Link column: header hint, but only if the values back it up ────────
+  let linkCol = pickByHeader(headers, LINK_ALIASES);
+  if (linkCol === -1 || linkScore(rows, linkCol) === 0) {
+    let best = -1, bestScore = 0;
+    for (let c = 0; c < width; c++) {
+      const s = linkScore(rows, c);
+      if (s > bestScore) { bestScore = s; best = c; }
+    }
+    linkCol = bestScore > 0 ? best : -1;
+  }
+  if (linkCol === -1) {
+    throw new Error(`Design map ${label}: no column contains Drive links`);
+  }
+
+  // ── Style column: header hint, else the first non-link column that is
+  //    populated and reasonably unique across the sheet ──────────────────
+  let styleCol = pickByHeader(headers, STYLE_ALIASES);
+  if (styleCol === -1 || styleCol === linkCol) {
+    let best = -1, bestUnique = 0;
+    for (let c = 0; c < width; c++) {
+      if (c === linkCol) continue;
+      const seen = new Set<string>();
+      let filled = 0;
+      for (let i = 1; i < Math.min(rows.length, 200); i++) {
+        const v = String(rows[i]?.[c] ?? "").trim();
+        if (v) { filled++; seen.add(v); }
+      }
+      if (filled > 0 && seen.size > bestUnique) { bestUnique = seen.size; best = c; }
+    }
+    styleCol = best;
+  }
+  if (styleCol === -1) {
+    throw new Error(`Design map ${label}: could not identify a style column`);
+  }
+
+  const map: DesignMap = {};
+  for (let i = 1; i < rows.length; i++) {
+    const style = String(rows[i]?.[styleCol] ?? "").trim();
+    if (!style || map[style]) continue;   // first link per style wins
+    const ref = parseDriveRef(String(rows[i]?.[linkCol] ?? ""));
+    if (ref) map[style] = ref;
+  }
+
+  // The catalogue zero-pads some codes ("00513") where the orders sheet
+  // doesn't ("513"). Add the unpadded form as an alias, but never overwrite
+  // a code that genuinely exists in its own right.
+  for (const code of Object.keys(map)) {
+    if (!/^0\d+$/.test(code)) continue;
+    const stripped = code.replace(/^0+/, "");
+    if (stripped && !map[stripped]) map[stripped] = map[code];
+  }
+
+  console.log(
+    `Design map ${label}: ${Object.keys(map).length} styles from "${headers[styleCol]}" → "${headers[linkCol]}"`,
+  );
+  return map;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * readOneCatalogue, but absorbing a transient blip (a rate-limited or flaky
+ * Sheets read) with a couple of quick retries before accepting the failure.
+ *
+ * This matters more than it would with a plain per-instance cache: the result
+ * of this call is about to be cached cluster-wide for REVALIDATE_SECONDS (see
+ * cachedComputeDesignMap below), so a source that merely stumbled once would
+ * otherwise vanish from every user's dashboard for the whole window, not just
+ * fail one unlucky request. A source that's ACTUALLY unreachable (not shared,
+ * wrong ID) still degrades gracefully to {} after retries — the multi-source
+ * merge below then just runs on whatever sources succeeded, exactly as
+ * before; only the odds of mistaking "blip" for "broken" are reduced.
+ */
+async function readOneCatalogueResilient(sheetId: string, range: string, label: string): Promise<DesignMap> {
+  const attempts = 3;
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await readOneCatalogue(sheetId, range, label);
+    } catch (err) {
+      lastErr = err;
+      if (i < attempts - 1) await sleep(300 * (i + 1)); // 300ms, then 600ms
+    }
+  }
+  console.error(
+    `Design map ${label} failed after ${attempts} attempts:`,
+    lastErr instanceof Error ? lastErr.message : lastErr,
+  );
+  return {};
 }
 
 /**
  * Read every configured catalogue and merge them, first source wins.
  * The expensive part — this function's body — is wrapped in a shared,
- * cross-instance cache below; nothing here should be called directly.
+ * cross-instance cache below; app code should call fetchDesignMap instead.
+ * Exported (only) so this can be exercised directly in a script without
+ * needing Next's request context, which unstable_cache requires.
  */
-async function computeDesignMap(): Promise<DesignMap> {
+export async function computeDesignMap(): Promise<DesignMap> {
   const ids = (process.env.GOOGLE_DESIGNS_SHEET_ID ?? "")
     .split(",").map((s) => s.trim()).filter(Boolean);
   const ranges = (process.env.GOOGLE_DESIGNS_RANGE ?? "")
     .split(",").map((s) => s.trim()).filter(Boolean);
 
   const results = await Promise.all(
-    ids.map((id, i) => readOneCatalogue(
+    ids.map((id, i) => readOneCatalogueResilient(
       id,
       // One range ⇒ it applies to every sheet; otherwise match positionally.
       ranges.length === 1 ? ranges[0] : (ranges[i] || "Sheet1"),
@@ -254,13 +286,31 @@ const cachedComputeDesignMap = unstable_cache(computeDesignMap, [CACHE_TAG], {
  * trusted catalogue first.
  *
  * Never throws: thumbnails are a nice-to-have and must not be able to take the
- * dashboard down.
+ * dashboard down. computeDesignMap itself also never throws — a source that's
+ * genuinely broken (not shared, wrong ID) degrades to contributing nothing,
+ * same as before this was cached — but each source gets a couple of quick
+ * retries first (see readOneCatalogueResilient), because the computed result
+ * is about to be cached cluster-wide for REVALIDATE_SECONDS: a source that
+ * merely stumbled once would otherwise vanish from every user's dashboard for
+ * the whole window, not just fail one unlucky request. This is a real
+ * incident this file caused once already — a burst of concurrent test
+ * traffic tripped a transient failure on one catalogue, and the resulting
+ * partial map got cached and served for several minutes before the retries
+ * were added.
  */
 export async function fetchDesignMap(force = false): Promise<DesignMap> {
   if (!designsConfigured()) return {};
   // Next 16's revalidateTag takes a profile; {expire: 0} means "stale now".
   if (force) revalidateTag(CACHE_TAG, { expire: 0 });
-  return cachedComputeDesignMap();
+  try {
+    return await cachedComputeDesignMap();
+  } catch (err) {
+    console.error(
+      "Design map: unavailable this request (not cached, will retry next request):",
+      err instanceof Error ? err.message : err,
+    );
+    return {};
+  }
 }
 
 export function clearDesignCache(): void {
