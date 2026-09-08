@@ -217,6 +217,43 @@ options*, not a data value, so showing all sub-cuts regardless of the active
 brand is harmless (a brand-narrowed tab may just show a dropdown option with
 nothing under it).
 
+## Reorder Radar
+
+Flags customers overdue against **their own** historical ordering rhythm —
+median gap between a customer's distinct order dates, compared to how long
+they've actually been silent — rather than one flat "no order in N days" rule.
+`reorderRadarRows(minOrders)` does the computation; `daysBetween()`,
+`reorderStatus()` (the 3-tier Critical/Watch/On Track split) and
+`renderReorderRadar()` sit next to it.
+
+Two decisions worth knowing if this needs touching:
+
+- **Brand-aware, date-filter-independent.** It respects `BRAND_FILTER` (same
+  `brandOf()` as everywhere else) but always reads full history against
+  today's real date, ignoring `DATE_FROM`/`DATE_TO` — narrowing the window
+  would make the median-gap math meaningless. Said explicitly in the tab's own
+  header text so it doesn't look like a bug when the date filter is active.
+- **Always individual customers, never clustered rows** — the entire point is
+  to catch an account gone quiet inside a cluster whose *blended* average
+  still looks fine (this is real: Seasons Enterprises Pvt. Ltd., 3,087 units /
+  118 orders historically, silent 411 days against a normal 2-day gap, is a
+  Seasons Group member). Cluster membership is shown as a badge annotation
+  instead of being merged away.
+
+Row click reuses the existing Customers-tab machinery rather than building a
+second drill UI: `jumpToCustomer()` switches tabs, sets the search box, then
+calls `handleCustClick()` on the matching row — so lock-mode redaction and the
+drill panel behave identically to clicking a row there directly. Needs the
+`data-cust` attribute on customer rows (`renderCusts()`) to find that row
+after re-render.
+
+Checked and deliberately not built here: discount/margin tracking (orders
+have one price column, no separate MRP; the catalogues' own Price/MRP columns
+are essentially empty) and low-stock flags from the catalogue's "Current
+available" column (that sheet is titled "...to Ecommerce OB" — almost
+certainly web-store stock, not wholesale/factory stock; surfacing it without
+confirming that first would risk being actively misleading).
+
 ## Customer clusters
 
 [src/lib/clusters.ts](src/lib/clusters.ts) hand-maps duplicate/related customer
