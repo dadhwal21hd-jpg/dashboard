@@ -164,6 +164,54 @@ Measured effect of both together: a burst of 60 concurrent thumbnail
 requests went from ~8s wall time with 3 failures (Drive quota/backoff under
 load) to ~2.7s with 0 failures on the same infrastructure.
 
+## Brand split (KK vs R-Studio)
+
+A business rule, not a sheet column — `brandOf(sn)` classifies a style number:
+
+- style number **< 50,000**, or an **`NR-xxx`**-coded style → **KK**
+- style number **≥ 50,000** → **R-Studio**
+- anything else (doesn't parse as a plain number and isn't `NR-`) → **Unclassified**
+
+Verified against the live orders sheet: the numeric boundary is completely
+clean (no style has ever sat at 49999/50000/50001), and as of writing **zero**
+orders fall into Unclassified. `NR-xxx` and a `CH-xxx` prefix both exist in the
+design catalogues (hundreds of codes) but **neither has ever been ordered** —
+the rule is real and coded correctly, but currently inert; don't be surprised
+if the KK/R-Studio split accounts for 100% of live data with nothing landing
+in Unclassified. If `CH-xxx` (or anything else) ever gets ordered, it'll
+correctly show up as Unclassified rather than being silently miscounted into
+either brand — that bucket exists specifically as a safety net, watch it after
+adding a new prefix.
+
+It's wired in as a value on the **global filter bar** (`BRAND_FILTER`,
+alongside `DATE_FROM`/`FILTER_MIN_QTY`/etc.), not a separate tab — selecting a
+brand narrows `FILTERED_RAW` in `applyGlobalFilter()`, so every tab that goes
+through `getFA()` inherits it for free. `anyGlobalFilterActive()` is the
+shared "is any global filter on" check; `openDrillByName()` uses it to decide
+whether to recompute a customer's sub-cut/style breakdown from `FILTERED_RAW`
+instead of trusting the server's unfiltered `D.drill` — **this same switch was
+already needed for qty/price filters and had never been wired**, so fixing it
+for brand fixed a pre-existing gap for those too.
+
+**Known gap, not fixed by this**: the **Clusters tab** (`renderClusters()`)
+reads `D.customers` / `D.subcuts` / `D.drill` directly and does not go through
+`getFA()` at all — it already ignored date/qty/price filters before brand
+existed, and it ignores brand too. This predates the brand feature; flagged
+here so it isn't mistaken for a bug introduced by it. Making Clusters
+filter-aware means re-deriving its auto-clustering and heatmap from `fa`
+instead of `D`, which is a real (if not huge) separate piece of work.
+
+Two other spots read `D.style_groups` (server, unfiltered) instead of
+`fa.styles` (client, filter-aware) and had the same brand-blind-spot before
+this: the Overview tab's "Styles sold" / "Top Style #" KPI cards, and the
+Insights tab's "Hero Style" card + its AI-prompt builder. Both now derive from
+`fa.styles`. The **sub-cut dropdown** in the Style Numbers tab
+(`document.getElementById('snfilter')`) is deliberately left reading
+`D.style_groups` — it's a one-time population of the *list of possible
+options*, not a data value, so showing all sub-cuts regardless of the active
+brand is harmless (a brand-narrowed tab may just show a dropdown option with
+nothing under it).
+
 ## Customer clusters
 
 [src/lib/clusters.ts](src/lib/clusters.ts) hand-maps duplicate/related customer

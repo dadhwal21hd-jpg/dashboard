@@ -818,6 +818,16 @@ body.customer-mode tr.cust-revealed::before{
 
   <div style="width:1px;height:20px;background:var(--border);margin:0 4px"></div>
 
+  <span class="filter-label">🏷️ Brand:</span>
+  <select id="brand-filter" onchange="applyGlobalFilter()" title="Split by style number: under 50,000 (and NR-xxx codes) = KK · 50,000 and above = R-Studio">
+    <option value="all">All Brands</option>
+    <option value="kk">KK</option>
+    <option value="rstudio">R-Studio</option>
+    <option value="unknown">Unclassified</option>
+  </select>
+
+  <div style="width:1px;height:20px;background:var(--border);margin:0 4px"></div>
+
   <button class="btn btn-outline btn-sm" onclick="clearAllFilters()" style="color:var(--accent4);border-color:var(--accent4)">✕ Clear All</button>
   <span id="global-filter-status" style="font-size:11px;color:var(--accent);font-family:'IBM Plex Mono',monospace;display:none"></span>
 </div>
@@ -1033,6 +1043,7 @@ let DATE_TO   = null;
 let activeCustRow = null;
 let FILTER_MIN_QTY = 0, FILTER_MAX_QTY = Infinity;
 let FILTER_MIN_PRICE = 0, FILTER_MAX_PRICE = Infinity;
+let BRAND_FILTER = 'all'; // 'all' | 'kk' | 'rstudio' | 'unknown'
 let _FA = null;          // cached filteredAnalytics result
 let _globalStyleMap = null;
 let _curSC = null, _curSCData = null;
@@ -1476,8 +1487,39 @@ function buildAnalytics(rows) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// GLOBAL FILTER ENGINE
+// BRAND SPLIT (business rule, not derived from any sheet column)
+//   style number < 50,000, or an "NR-xxx" coded style  → KK
+//   style number ≥ 50,000                              → R-Studio
+//   anything else (doesn't parse as a plain number,
+//   isn't NR-prefixed — e.g. the catalogue's "CH-xxx"
+//   codes) → unknown. No unknown-coded style has ever
+//   actually been ordered as of this being written, so
+//   this bucket is a safety net, not a live category.
 // ══════════════════════════════════════════════════════════════
+const BRAND_LABEL = { kk: 'KK', rstudio: 'R-Studio', unknown: 'Unclassified' };
+const BRAND_BADGE_CLASS = { kk: 'bg', rstudio: 'bb', unknown: 'br' };
+
+function brandOf(sn) {
+  const s = String(sn || '').trim();
+  if (!s) return 'unknown';
+  if (/^NR-?/i.test(s)) return 'kk';
+  if (/^\d+$/.test(s)) return Number(s) < 50000 ? 'kk' : 'rstudio';
+  return 'unknown';
+}
+
+function brandBadge(sn) {
+  const b = brandOf(sn);
+  return `<span class="badge ${BRAND_BADGE_CLASS[b]}" style="font-size:9px" title="Brand split: style < 50,000 or NR-xxx = KK, ≥ 50,000 = R-Studio">${BRAND_LABEL[b]}</span>`;
+}
+
+/** True when any control in the global filter bar would narrow the data —
+ *  used to decide whether drill-downs must recompute from FILTERED_RAW
+ *  instead of trusting the server's unfiltered precomputed drill data. */
+function anyGlobalFilterActive() {
+  return !!(DATE_FROM || DATE_TO || FILTER_MIN_QTY || FILTER_MAX_QTY < Infinity ||
+            FILTER_MIN_PRICE || FILTER_MAX_PRICE < Infinity || BRAND_FILTER !== 'all');
+}
+
 function rowDateStr(r) {
   if (!r.dt) return null;
   if (r.dt instanceof Date) {
@@ -1494,8 +1536,9 @@ function applyGlobalFilter() {
   FILTER_MAX_QTY   = parseFloat(document.getElementById('filter-max-qty').value)   || Infinity;
   FILTER_MIN_PRICE = parseFloat(document.getElementById('filter-min-price').value) || 0;
   FILTER_MAX_PRICE = parseFloat(document.getElementById('filter-max-price').value) || Infinity;
+  BRAND_FILTER = document.getElementById('brand-filter').value || 'all';
 
-  const active = DATE_FROM||DATE_TO||FILTER_MIN_QTY||FILTER_MAX_QTY<Infinity||FILTER_MIN_PRICE||FILTER_MAX_PRICE<Infinity;
+  const active = anyGlobalFilterActive();
   FILTERED_RAW = active ? D.raw.filter(r => {
     if (DATE_FROM||DATE_TO) {
       const ds = rowDateStr(r); if (!ds) return false;
@@ -1504,13 +1547,18 @@ function applyGlobalFilter() {
     }
     if (r.q < FILTER_MIN_QTY || r.q > FILTER_MAX_QTY) return false;
     if (r.p && (r.p < FILTER_MIN_PRICE || r.p > FILTER_MAX_PRICE)) return false;
+    if (BRAND_FILTER !== 'all' && brandOf(r.sn) !== BRAND_FILTER) return false;
     return true;
   }) : [...D.raw];
 
   _FA = null; // invalidate cache
   const st = document.getElementById('global-filter-status');
-  if (active) { st.style.display='inline'; st.textContent=`${FILTERED_RAW.length.toLocaleString()} rows match`; }
-  else          { st.style.display='none'; }
+  if (active) {
+    const brandNote = BRAND_FILTER !== 'all' ? ` · Brand: ${BRAND_LABEL[BRAND_FILTER]}` : '';
+    st.style.display='inline'; st.textContent=`${FILTERED_RAW.length.toLocaleString()} rows match${brandNote}`;
+  } else {
+    st.style.display='none';
+  }
 
   renderAll();
 }
@@ -1530,6 +1578,7 @@ function setQuick(period) {
 
 function clearAllFilters() {
   ['date-from','date-to','filter-min-qty','filter-max-qty','filter-min-price','filter-max-price'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  const bf = document.getElementById('brand-filter'); if (bf) bf.value = 'all';
   applyGlobalFilter();
 }
 
@@ -1651,13 +1700,18 @@ function drawTrend(id, data, lc='#b5622a', fc='rgba(181,98,42,0.1)', H=180) {
 function renderOverview() {
   const fa = getFA();
   const threshold = getStyleThreshold();
-  // Count styles that meet the current threshold (server sends all styles now)
+  // Count styles that meet the current threshold, from the filter-aware style
+  // map (fa.styles) rather than the server's unfiltered D.style_groups — this
+  // KPI card must reflect the global filter bar (date/qty/price/brand) same
+  // as everything else, not always show the all-time, all-brand figure.
   let totalStyles = 0;
-  for (const g of D.style_groups) {
-    for (const s of g.s) if (s.qty > threshold) totalStyles++;
+  const scWithQualifying = new Set();
+  for (const [sn, v] of Object.entries(fa.styles)) {
+    if (v.qty > threshold) { totalStyles++; if (v.sc) scWithQualifying.add(v.sc); }
   }
-  const subcutCountWithStyles = D.style_groups.filter(g => g.s.some(s => s.qty > threshold)).length;
-  const topStyle = D.style_groups.flatMap(g=>g.s).sort((a,b)=>b.qty-a.qty)[0];
+  const subcutCountWithStyles = scWithQualifying.size;
+  const topEntry = Object.entries(fa.styles).sort((a,b) => b[1].qty - a[1].qty)[0];
+  const topStyle = topEntry ? { n: topEntry[0], qty: topEntry[1].qty, rev: Math.round(topEntry[1].rev) } : null;
   const isFiltered = FILTERED_RAW.length < D.raw.length;
   const dispQty = isFiltered ? fa.totalQty : D.total_qty;
   const dispRev = isFiltered ? fa.totalRev : D.total_rev;
@@ -1731,7 +1785,7 @@ function renderSG() {
       const star=s.qty>=40?'<span class="badge bg" style="font-size:9px;padding:1px 5px">⭐</span>':s.qty>=25?'<span class="badge br" style="font-size:9px;padding:1px 5px">🔥</span>':'';
       return`<tr class="sn-row" data-style="${esc(s.n)}" onclick="toggleStyleCust(this)" title="Click to see which customers bought this style">
         <td style="color:var(--text3);font-family:IBM Plex Mono,monospace;font-size:11px;padding:7px 12px;width:32px"><span class="sn-chev">▸</span>${i+1}</td>
-        <td style="padding:5px 12px"><div style="display:flex;align-items:center;gap:9px">${designThumb(s.n,'sm')}<strong style="font-family:IBM Plex Mono,monospace;color:${col}">#${s.n}</strong></div></td>
+        <td style="padding:5px 12px"><div style="display:flex;align-items:center;gap:9px">${designThumb(s.n,'sm')}<strong style="font-family:IBM Plex Mono,monospace;color:${col}">#${s.n}</strong>${BRAND_FILTER==='all'?brandBadge(s.n):''}</div></td>
         <td style="padding:7px 12px"><div style="display:flex;align-items:center;gap:8px"><div style="width:100px;background:#f0ede8;height:6px;border-radius:3px"><div style="width:${pct}%;height:100%;background:${col};border-radius:3px;opacity:.75"></div></div><strong style="font-family:IBM Plex Mono,monospace;font-size:13px;color:${col};min-width:24px">${s.qty}</strong>${star}</div></td>
         <td style="text-align:right;font-family:IBM Plex Mono,monospace;font-size:12px;color:var(--text2);padding:7px 12px">${fmt(s.rev)}</td>
         <td style="text-align:right;font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--text3);padding:7px 12px">${s.price?'₹'+fN(s.price):'—'}</td>
@@ -2024,8 +2078,11 @@ function openDrillByName(custName, rowEl) {
     clusterMembers = new Set(Object.entries(membership).filter(([_, v]) => v === custName).map(([k]) => k));
   }
 
-  if ((DATE_FROM || DATE_TO) && FILTERED_RAW.length > 0) {
-    // Recompute from the filtered rows so sub cuts + styles match the date window
+  if (anyGlobalFilterActive() && FILTERED_RAW.length > 0) {
+    // Recompute from the filtered rows so sub cuts + styles match whatever's
+    // active in the global filter bar (date window, qty/price, or brand) —
+    // FILTERED_RAW already excludes non-matching rows, so this loop just
+    // needs to run over it instead of the server's unfiltered drill data.
     const scAcc = {};
     for (const r of FILTERED_RAW) {
       // For clusters: row must belong to a member. For individuals: row must match name.
@@ -2137,7 +2194,7 @@ function redrawStyleTable() {
     const globalBadge = `<span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:${isHit?'#2a8a72':'#9c978e'};font-weight:${isHit?700:400}" title="Total sold to all customers">${fN(gQty)} pcs${isHit?' 🌍':''}</span>`;
     return`<tr>
       <td style="color:var(--text3);font-size:11px;font-family:'IBM Plex Mono',monospace;padding:7px 10px">${i+1}</td>
-      <td style="padding:5px 10px"><div style="display:flex;align-items:center;gap:8px">${designThumb(s.n,'sm')}<span style="font-family:'IBM Plex Mono',monospace;font-weight:700;color:${col}">#${s.n}</span></div></td>
+      <td style="padding:5px 10px"><div style="display:flex;align-items:center;gap:8px">${designThumb(s.n,'sm')}<span style="font-family:'IBM Plex Mono',monospace;font-weight:700;color:${col}">#${s.n}</span>${BRAND_FILTER==='all'?brandBadge(s.n):''}</div></td>
       <td style="padding:7px 10px"><div style="display:flex;align-items:center;gap:8px">
         <div style="width:80px;background:#f0ede8;height:6px;border-radius:3px"><div style="width:${pct}%;height:100%;background:${col};border-radius:3px;opacity:.75"></div></div>
         <strong style="font-family:'IBM Plex Mono',monospace;color:${col}">${s.qty} pcs</strong>
@@ -2244,7 +2301,11 @@ function renderInsights() {
   const minMonth = allMonths.length>1?allMonths.reduce((a,b)=>b.q<a.q?b:a,allMonths[0]):null;
   const maxMonth = allMonths.length>1?allMonths.reduce((a,b)=>b.q>a.q?b:a,allMonths[0]):null;
   const topRPU = fa.subcuts.slice(0,10).filter(s=>s.qty>0).sort((a,b)=>(b.revenue/b.qty)-(a.revenue/a.qty))[0];
-  const topStyleAll = D.style_groups.flatMap(g=>g.s).sort((a,b)=>b.qty-a.qty)[0];
+  // From fa.styles (filter-aware), not D.style_groups (server, unfiltered) —
+  // same reasoning as renderOverview: this insight must track the global
+  // filter bar, including a brand selection, not always the all-brand figure.
+  const topStyleEntry = Object.entries(fa.styles).sort((a,b) => b[1].qty - a[1].qty)[0];
+  const topStyleAll = topStyleEntry ? { n: topStyleEntry[0], qty: topStyleEntry[1].qty, rev: Math.round(topStyleEntry[1].rev) } : null;
 
   const ins = [
     top1SC    ? {i:'🏆',t:`${top1SC.name} Dominates`,c:'#b5622a',b:`<strong>${top1SC.name} = ${fa.totalQty?((top1SC.qty/fa.totalQty)*100).toFixed(0):0}% of all units</strong> (${fN(top1SC.qty)} pcs, ${fmt(top1SC.revenue)}). Widest reach — ${top1SC.customers} customers.`} : null,
@@ -2323,9 +2384,12 @@ async function generateAIInsights() {
 
   const top5sc = fa.subcuts.slice(0,5).map(s=>`${s.name}: ${fN(s.qty)} units, ${fmt(s.revenue)}, ${s.customers} customers`).join('\n');
   const top8cu = fa.customers.slice(0,8).map(c=>`${c.name}: ${fN(c.qty)} units, ${fmt(c.revenue)}, buys ${c.sc.slice(0,4).join('/')}`).join('\n');
-  const topStyles = D.style_groups.flatMap(g=>g.s).sort((a,b)=>b.qty-a.qty).slice(0,10).map(s=>`#${s.n}(${s.qty}pcs)`).join(', ');
+  const topStyles = Object.entries(fa.styles).sort((a,b)=>b[1].qty-a[1].qty).slice(0,10).map(([sn,v])=>`#${sn}(${v.qty}pcs)`).join(', ');
   const monthSummary = fa.monthly.slice(-12).map(m=>`${m.m}:${m.q}`).join(', ');
-  const dateNote = (DATE_FROM||DATE_TO) ? `Date filter: ${DATE_FROM||'start'} to ${DATE_TO||'end'}` : 'All-time data';
+  const activeNotes = [];
+  if (DATE_FROM||DATE_TO) activeNotes.push(`Date filter: ${DATE_FROM||'start'} to ${DATE_TO||'end'}`);
+  if (BRAND_FILTER!=='all') activeNotes.push(`Brand filter: ${BRAND_LABEL[BRAND_FILTER]} only`);
+  const dateNote = activeNotes.length ? activeNotes.join(' | ') : 'All-time, all-brand data';
 
   const prompt = `You are a senior business analyst for an Indian fashion/garment business. Analyse this dispatch data and give exactly 20 sharp business insights as plain numbered bullet points. No headers, no sub-bullets, no markdown. Each point must be one clear sentence with a specific number or fact from the data. Cover performance, customer behaviour, seasonal patterns, pricing, reorder opportunities, risks, and actions to take.
 
@@ -2393,9 +2457,14 @@ function csvCell(v){
 function exportTag(){
   const isFiltered = FILTERED_RAW.length < D.raw.length;
   if (!isFiltered) return '';
-  const f = DATE_FROM ? DATE_FROM.replace(/-/g,'') : 'start';
-  const t = DATE_TO   ? DATE_TO.replace(/-/g,'')   : 'end';
-  return `_${f}_to_${t}`;
+  let tag = '';
+  if (DATE_FROM || DATE_TO) {
+    const f = DATE_FROM ? DATE_FROM.replace(/-/g,'') : 'start';
+    const t = DATE_TO   ? DATE_TO.replace(/-/g,'')   : 'end';
+    tag += `_${f}_to_${t}`;
+  }
+  if (BRAND_FILTER !== 'all') tag += `_${BRAND_FILTER}`;
+  return tag || '_filtered';
 }
 
 // Rebuild style groups from currently filtered data with the user's threshold
