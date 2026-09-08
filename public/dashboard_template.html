@@ -819,7 +819,7 @@ body.customer-mode tr.cust-revealed::before{
   <div style="width:1px;height:20px;background:var(--border);margin:0 4px"></div>
 
   <span class="filter-label">🏷️ Brand:</span>
-  <select id="brand-filter" onchange="applyGlobalFilter()" title="Split by style number: under 50,000 or NR-xxx = KK · 50,000+ or CH-xxx = R-Studio">
+  <select id="brand-filter" onchange="applyGlobalFilter()" title="Split by style number: under 50,000 = KK · 50,000+ or NR-xxx/CH-xxx = R-Studio">
     <option value="all">All Brands</option>
     <option value="kk">KK</option>
     <option value="rstudio">R-Studio</option>
@@ -1488,8 +1488,8 @@ function buildAnalytics(rows) {
 
 // ══════════════════════════════════════════════════════════════
 // BRAND SPLIT (business rule, not derived from any sheet column)
-//   style number < 50,000, or an "NR-xxx" coded style  → KK
-//   style number ≥ 50,000, or a "CH-xxx" coded style   → R-Studio
+//   style number < 50,000                              → KK
+//   style number ≥ 50,000, or "NR-xxx"/"CH-xxx" coded   → R-Studio
 //   anything else (doesn't parse as a plain number, isn't
 //   NR- or CH-prefixed) → unknown. Neither NR- nor CH- coded
 //   styles had ever actually been ordered as of this being
@@ -1503,15 +1503,14 @@ const BRAND_BADGE_CLASS = { kk: 'bg', rstudio: 'bb', unknown: 'br' };
 function brandOf(sn) {
   const s = String(sn || '').trim();
   if (!s) return 'unknown';
-  if (/^NR-?/i.test(s)) return 'kk';
-  if (/^CH-?/i.test(s)) return 'rstudio';
+  if (/^(NR|CH)-?/i.test(s)) return 'rstudio';
   if (/^\d+$/.test(s)) return Number(s) < 50000 ? 'kk' : 'rstudio';
   return 'unknown';
 }
 
 function brandBadge(sn) {
   const b = brandOf(sn);
-  return `<span class="badge ${BRAND_BADGE_CLASS[b]}" style="font-size:9px" title="Brand split: style < 50,000 or NR-xxx = KK · ≥ 50,000 or CH-xxx = R-Studio">${BRAND_LABEL[b]}</span>`;
+  return `<span class="badge ${BRAND_BADGE_CLASS[b]}" style="font-size:9px" title="Brand split: style < 50,000 = KK · ≥ 50,000 or NR-xxx/CH-xxx = R-Studio">${BRAND_LABEL[b]}</span>`;
 }
 
 /** True when any control in the global filter bar would narrow the data —

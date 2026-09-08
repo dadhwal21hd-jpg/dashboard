@@ -168,9 +168,14 @@ load) to ~2.7s with 0 failures on the same infrastructure.
 
 A business rule, not a sheet column — `brandOf(sn)` classifies a style number:
 
-- style number **< 50,000**, or an **`NR-xxx`**-coded style → **KK**
-- style number **≥ 50,000**, or a **`CH-xxx`**-coded style → **R-Studio**
+- style number **< 50,000** → **KK**
+- style number **≥ 50,000**, or an **`NR-xxx`** / **`CH-xxx`**-coded style → **R-Studio**
 - anything else (doesn't parse as a plain number, isn't `NR-` or `CH-`) → **Unclassified**
+
+(Corrected twice in review: `NR-xxx` was first thought to be KK, then it and
+`CH-xxx` were confirmed to both be R-Studio — the numeric-only rule was right
+from the start, the prefixes just needed to land on the same side as the
+≥50,000 numerics, not the <50,000 side.)
 
 Verified against the live orders sheet: the numeric boundary is completely
 clean (no style has ever sat at 49999/50000/50001), and as of writing **zero**
