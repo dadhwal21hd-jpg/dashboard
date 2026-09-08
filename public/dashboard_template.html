@@ -1699,6 +1699,19 @@ function getFilteredCustQR(name) {
 // ══════════════════════════════════════════════════════════════
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function fmt(n){return n>=1e7?'₹'+(n/1e7).toFixed(2)+'Cr':n>=1e5?'₹'+(n/1e5).toFixed(1)+'L':'₹'+n.toLocaleString('en-IN');}
+// Every date this app produces internally (RawRow.dt, <input type=date>
+// values) is ISO yyyy-mm-dd — that's an HTML spec requirement for the date
+// inputs, not a display choice. This is the one place that turns it into the
+// DD-MM-YY shown on screen; native <input type=date> pickers are exempt
+// (their visible format is the browser's own locale rendering, not something
+// this app's JS can override without replacing them with a custom widget).
+function fmtDate(iso) {
+  if (!iso) return '';
+  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return iso; // unrecognised shape — show it rather than blank it
+  const [, y, mo, d] = m;
+  return `${d}-${mo}-${y.slice(2)}`;
+}
 function fN(n){return n.toLocaleString('en-IN');}
 function rn(i){const l=['🥇','🥈','🥉'];const c=i===0?'rg':i===1?'rs':i===2?'rb':'';return`<span class="rank-num ${c}">${i<3?l[i]:i+1}</span>`;}
 function bar(lbl,pct,col,val){return`<div class="bar-item"><div class="bar-label"><span class="bar-name">${lbl}</span><span class="bar-val">${val}</span></div><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div></div>`;}
@@ -1861,9 +1874,28 @@ function styleBuyers(sn) {
     if (!a) a = acc[r.c] = {name:r.c, qty:0, rev:0, dates:new Set(), first:null, last:null};
     a.qty += r.q; a.rev += r.q * r.p;
     if (r.d) a.dates.add(r.d);
-    const ds = r.dt ? String(r.dt).slice(0,10) : null;
-    if (ds) { if (!a.first || ds < a.first) a.first = ds; if (!a.last || ds > a.last) a.last = ds; }
   }
+
+  // Order Window (first → last) is deliberately read from the FULL, unfiltered
+  // history (D.raw), not the rows above. Picking a year (e.g. "2025") would
+  // otherwise cap the shown window to that year and make a still-active
+  // customer look like their last order was 31 Dec — hiding a dispatch that
+  // actually happened last week. Qty/revenue/order-count above stay scoped to
+  // the active filter, since that's the point of picking a year; only the
+  // calendar window itself is freed from it. When no filter is active,
+  // rows === D.raw already, so this is just a harmless second pass, not a
+  // special case. Only touches customers already in `acc` — doesn't pull in
+  // a buyer who bought this style solely outside the filtered period, which
+  // would silently change "how many buyers" too.
+  for (const r of D.raw) {
+    if (r.sn !== sn || !r.c || !r.dt) continue;
+    const a = acc[r.c];
+    if (!a) continue;
+    const ds = String(r.dt).slice(0,10);
+    if (!a.first || ds < a.first) a.first = ds;
+    if (!a.last || ds > a.last) a.last = ds;
+  }
+
   return Object.values(acc)
     .map(a => ({...a, rev:Math.round(a.rev), orders:a.dates.size || 1}))
     .sort((x,y) => y.qty - x.qty);
@@ -1916,7 +1948,7 @@ function styleBuyersHTML(sn) {
     const cl    = membership[b.name];
     const clBadge = cl ? `<span class="badge bb" style="font-size:8px;margin-left:5px;background:#f5e6d3;color:var(--accent);border:1px solid var(--accent)" title="Part of group: ${esc(cl)}">⌒ ${esc(cl.length>16?cl.slice(0,14)+'…':cl)}</span>` : '';
     const span  = (b.first && b.last)
-      ? (b.first === b.last ? b.first : `${b.first} → ${b.last}`)
+      ? (b.first === b.last ? fmtDate(b.first) : `${fmtDate(b.first)} → ${fmtDate(b.last)}`)
       : '—';
     return `<tr>
       <td style="color:var(--text3);font-family:'IBM Plex Mono',monospace;font-size:10px;width:26px">${i+1}</td>
@@ -2167,7 +2199,7 @@ function openDrill(custName, drillData, rowEl) {
   document.getElementById('drill-cust-name').textContent = custName;
   const chip = document.getElementById('active-filter-chip');
   if (chip && document.getElementById('drill-date-label')) {
-    document.getElementById('drill-date-label').textContent = chip.style.display!=='none' ? `(filtered: ${document.getElementById('date-from').value||'start'} → ${document.getElementById('date-to').value||'end'})` : '';
+    document.getElementById('drill-date-label').textContent = chip.style.display!=='none' ? `(filtered: ${fmtDate(document.getElementById('date-from').value)||'start'} → ${fmtDate(document.getElementById('date-to').value)||'end'})` : '';
   }
   document.getElementById('drill-styles').style.display='none';
 
@@ -2351,7 +2383,7 @@ function renderReorderRadar() {
       <td class="num"><strong>${fN(r.qty)}</strong></td>
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace">${r.orders}</td>
       <td class="num" style="font-family:'IBM Plex Mono',monospace;font-size:11px">every ${r.medianGap}d</td>
-      <td class="num" style="font-family:'IBM Plex Mono',monospace;font-size:11px">${r.lastDate}</td>
+      <td class="num" style="font-family:'IBM Plex Mono',monospace;font-size:11px">${fmtDate(r.lastDate)}</td>
       <td class="num"><strong style="color:${st.k==='br'?'#c0392b':st.k==='bg'?'#b5622a':'#2a8a72'}">${fN(r.sinceLast)}d</strong> <span style="font-size:10px;color:var(--text3)">(${r.ratio.toFixed(1)}x)</span></td>
       <td style="text-align:center"><span class="badge ${st.k}">${st.l}</span></td>
     </tr>`;
