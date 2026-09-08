@@ -779,7 +779,8 @@ body.customer-mode tr.cust-revealed::before{
   <div class="nav-tab active" onclick="switchTab('overview',this)">📊 Overview</div>
   <div class="nav-tab" onclick="switchTab('subcuts',this)">✂️ Sub Cuts</div>
   <div class="nav-tab" onclick="switchTab('stylenumbers',this)">🔢 Style Numbers</div>
-  <div class="nav-tab" onclick="switchTab('customers',this)">🏪 Customers</div>
+  <div class="nav-tab" id="navtab-customers" onclick="switchTab('customers',this)">🏪 Customers</div>
+  <div class="nav-tab" onclick="switchTab('reorder',this)">📡 Reorder Radar</div>
   <div class="nav-tab" onclick="switchTab('clusters',this)">🧩 Clusters</div>
   <div class="nav-tab" onclick="switchTab('insights',this)">💡 Insights</div>
 </div>
@@ -960,6 +961,41 @@ body.customer-mode tr.cust-revealed::before{
       </div>
       <div id="drill-style-table"></div>
     </div>
+  </div>
+</div>
+
+<!-- REORDER RADAR -->
+<div class="section" id="tab-reorder">
+  <div class="sec-hdr">
+    <div><div class="sec-title">📡 Reorder Radar</div><div class="sec-sub">Who's overdue against their <em>own</em> ordering rhythm — not a generic day count. Uses full order history and today's date; the date range filter above doesn't apply here (brand and the min-history/min-qty controls below do).</div></div>
+    <button class="btn btn-outline btn-sm" onclick="exportReorderCSV()">⬇ Export CSV</button>
+  </div>
+
+  <div class="filter-row">
+    <span class="filter-label">Min history:</span>
+    <select id="reorder-min-orders" onchange="renderReorderRadar()">
+      <option value="3">3+ orders</option>
+      <option value="5">5+ orders</option>
+      <option value="10">10+ orders</option>
+    </select>
+    <span class="filter-label">Sort:</span>
+    <select id="reorder-sort" onchange="renderReorderRadar()">
+      <option value="ratio">Most Overdue</option>
+      <option value="qty">Units at Risk</option>
+      <option value="sinceLast">Days Silent</option>
+    </select>
+    <input type="text" class="search-box" id="reorder-search" placeholder="Search customer…" oninput="renderReorderRadar()">
+    <span id="reorder-count-label" style="font-size:11px;color:var(--text3);font-family:'IBM Plex Mono',monospace"></span>
+  </div>
+
+  <div class="kpi-grid" id="reorder-kpi-grid" style="margin-bottom:14px"></div>
+
+  <div class="card-wide" style="padding:0;border-radius:10px;overflow:hidden">
+    <table class="data-table"><thead><tr>
+      <th>#</th><th>Customer</th><th style="text-align:right">Historical Qty</th><th style="text-align:center">Orders</th>
+      <th style="text-align:right">Normal Gap</th><th style="text-align:right">Last Order</th>
+      <th style="text-align:right">Silent For</th><th style="text-align:center">Status</th>
+    </tr></thead><tbody id="reorder-tbody"></tbody></table>
   </div>
 </div>
 
@@ -2033,7 +2069,7 @@ function renderCusts() {
     if (LOCK_MODE === 'customer') {
       rowCls = (c.name === UNLOCKED_CUSTOMER) ? 'cust-revealed' : 'cust-redacted';
     }
-    return`<tr class="${rowCls}" onclick="handleCustClick('${safeName}',this)" style="cursor:pointer">
+    return`<tr class="${rowCls}" data-cust="${esc(c.name)}" onclick="handleCustClick('${safeName}',this)" style="cursor:pointer">
       <td>${rn(i)}</td>
       <td style="display:flex;align-items:center;gap:6px;font-weight:500"><span style="font-size:10px;color:var(--text3)">▶</span>${displayName}${clusterBadge}</td>
       <td class="num"><strong>${fN(c.qty)}</strong>${filtTag}</td>
@@ -2228,6 +2264,128 @@ function closeDrill(){
 }
 
 // ══════════════════════════════════════════════════════════════
+// REORDER RADAR
+// Flags customers who have gone quiet well past their OWN historical
+// ordering rhythm (median gap between their distinct order dates), rather
+// than a one-size-fits-all "no order in N days" rule. A customer who
+// normally orders every 2 days going silent for 3 weeks is a much louder
+// signal than a customer who normally orders every 6 weeks doing the same.
+//
+// Deliberately brand-aware (via BRAND_FILTER) but date-filter-independent:
+// "who is overdue right now" is a whole-history, present-moment question —
+// narrowing to a date window would make the median-gap math meaningless.
+// Always individual customers, never clustered rows: the whole point is to
+// catch an account going quiet even when its cluster's blended average
+// still looks healthy (see the cluster badge in the rendered table).
+// ══════════════════════════════════════════════════════════════
+
+function daysBetween(isoA, isoB) {
+  return Math.round((new Date(isoB + 'T00:00:00Z').getTime() - new Date(isoA + 'T00:00:00Z').getTime()) / 86400000);
+}
+
+function reorderRadarRows(minOrders) {
+  const rows = BRAND_FILTER === 'all' ? D.raw : D.raw.filter(r => brandOf(r.sn) === BRAND_FILTER);
+  const custDates = {}, custQty = {};
+  for (const r of rows) {
+    if (!r.c || !r.dt) continue;
+    if (!custDates[r.c]) { custDates[r.c] = new Set(); custQty[r.c] = 0; }
+    custDates[r.c].add(r.dt);
+    custQty[r.c] += r.q;
+  }
+
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const membership = D.cluster_membership || {};
+  const out = [];
+  for (const [name, datesSet] of Object.entries(custDates)) {
+    const ds = [...datesSet].sort();
+    if (ds.length < minOrders) continue; // not enough history to establish a rhythm
+    const gaps = [];
+    for (let i = 1; i < ds.length; i++) gaps.push(daysBetween(ds[i-1], ds[i]));
+    gaps.sort((a,b) => a - b);
+    const medianGap = gaps[Math.floor(gaps.length / 2)];
+    if (medianGap <= 0) continue; // same-day-only history, no meaningful cadence
+    const lastDate = ds[ds.length - 1];
+    const sinceLast = daysBetween(lastDate, todayISO);
+    out.push({
+      name, qty: custQty[name], orders: ds.length, medianGap, lastDate, sinceLast,
+      ratio: sinceLast / medianGap, cluster: membership[name] || null,
+    });
+  }
+  return out;
+}
+
+/** ratio ≥3x = critical, ≥1.5x = watch, else on track — same tiering used
+ *  everywhere in this app for a "how worried should I be" 3-way split. */
+function reorderStatus(ratio) {
+  if (ratio >= 3)   return { k: 'br', l: '🔴 Critical' };
+  if (ratio >= 1.5) return { k: 'bg', l: '🟠 Watch' };
+  return                    { k: 'bc', l: '🟢 On Track' };
+}
+
+function renderReorderRadar() {
+  const minOrders = parseInt(document.getElementById('reorder-min-orders').value) || 3;
+  const sortBy = document.getElementById('reorder-sort').value;
+  const search = document.getElementById('reorder-search').value.trim().toLowerCase();
+
+  let rows = reorderRadarRows(minOrders);
+  if (search) rows = rows.filter(r => r.name.toLowerCase().includes(search));
+  rows.sort((a,b) => sortBy === 'qty' ? b.qty - a.qty : sortBy === 'sinceLast' ? b.sinceLast - a.sinceLast : b.ratio - a.ratio);
+
+  const critical = rows.filter(r => r.ratio >= 3);
+  const watch    = rows.filter(r => r.ratio >= 1.5 && r.ratio < 3);
+  const qtyAtRisk = [...critical, ...watch].reduce((s,r) => s + r.qty, 0);
+
+  document.getElementById('reorder-count-label').textContent = `${rows.length} customers scored`;
+  document.getElementById('reorder-kpi-grid').innerHTML = `
+    <div class="kpi-card" style="--ac:#c0392b"><div class="kpi-label">🔴 Critical</div><div class="kpi-value">${critical.length}</div><div class="kpi-sub">3x+ their normal gap</div></div>
+    <div class="kpi-card" style="--ac:#b5622a"><div class="kpi-label">🟠 Watch</div><div class="kpi-value">${watch.length}</div><div class="kpi-sub">1.5x–3x their normal gap</div></div>
+    <div class="kpi-card" style="--ac:#2a8a72"><div class="kpi-label">🟢 On Track</div><div class="kpi-value">${rows.length - critical.length - watch.length}</div><div class="kpi-sub">Ordering close to their usual rhythm</div></div>
+    <div class="kpi-card" style="--ac:#4a6fa5"><div class="kpi-label">Units at Risk</div><div class="kpi-value">${fN(qtyAtRisk)}</div><div class="kpi-sub">Historical volume from Critical + Watch accounts</div></div>`;
+
+  document.getElementById('reorder-tbody').innerHTML = rows.map((r,i) => {
+    const st = reorderStatus(r.ratio);
+    const clusterBadge = r.cluster ? `<span class="badge bb" style="font-size:8px;margin-left:6px;background:#f5e6d3;color:var(--accent);border:1px solid var(--accent)" title="Part of ${esc(r.cluster)} — that cluster's blended average may look healthier than this account alone">⌒ ${esc(r.cluster.length>18?r.cluster.slice(0,16)+'…':r.cluster)}</span>` : '';
+    return `<tr style="cursor:pointer" onclick="jumpToCustomer('${r.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')">
+      <td>${rn(i)}</td>
+      <td style="font-weight:500">${buyerLabel(r.name, i)}${clusterBadge}</td>
+      <td class="num"><strong>${fN(r.qty)}</strong></td>
+      <td style="text-align:center;font-family:'IBM Plex Mono',monospace">${r.orders}</td>
+      <td class="num" style="font-family:'IBM Plex Mono',monospace;font-size:11px">every ${r.medianGap}d</td>
+      <td class="num" style="font-family:'IBM Plex Mono',monospace;font-size:11px">${r.lastDate}</td>
+      <td class="num"><strong style="color:${st.k==='br'?'#c0392b':st.k==='bg'?'#b5622a':'#2a8a72'}">${fN(r.sinceLast)}d</strong> <span style="font-size:10px;color:var(--text3)">(${r.ratio.toFixed(1)}x)</span></td>
+      <td style="text-align:center"><span class="badge ${st.k}">${st.l}</span></td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--text3)">No customers meet the minimum-history threshold${search?' matching your search':''}.</td></tr>`;
+}
+
+/** Jump from a radar row into the Customers tab, pre-filtered to that
+ *  customer, and open their drill-down — through handleCustClick, so lock
+ *  mode (name redaction / unlock prompts) behaves exactly as it does when
+ *  clicking a row there directly. */
+function jumpToCustomer(name) {
+  switchTab('customers', document.getElementById('navtab-customers'));
+  setCustView('individual'); // the radar scores individuals, not cluster blends
+  const search = document.getElementById('cust-search');
+  if (search) search.value = name;
+  renderCusts();
+  requestAnimationFrame(() => {
+    const row = document.querySelector(`#cust-tbody tr[data-cust="${CSS.escape(name)}"]`);
+    if (row) handleCustClick(name, row);
+  });
+}
+
+function exportReorderCSV() {
+  const minOrders = parseInt(document.getElementById('reorder-min-orders').value) || 3;
+  const rows = reorderRadarRows(minOrders).sort((a,b) => b.ratio - a.ratio);
+  let c = 'Customer,Historical Qty,Orders,Normal Gap (days),Last Order,Days Silent,Overdue Ratio,Status,Cluster\n';
+  rows.forEach(r => {
+    const st = reorderStatus(r.ratio);
+    c += `${csvCell(r.name)},${r.qty},${r.orders},${r.medianGap},${r.lastDate},${r.sinceLast},${r.ratio.toFixed(2)},${csvCell(st.l)},${csvCell(r.cluster||'')}\n`;
+  });
+  dl(c, `ReorderRadar${BRAND_FILTER!=='all'?'_'+BRAND_FILTER:''}.csv`);
+}
+
+// ══════════════════════════════════════════════════════════════
 // CLUSTERS (auto-generated)
 // ══════════════════════════════════════════════════════════════
 function renderClusters() {
@@ -2287,6 +2445,7 @@ function renderAll() {
   renderSubcuts();
   renderSG();
   renderCusts();
+  renderReorderRadar();
   renderClusters();
   renderInsights();
 }
