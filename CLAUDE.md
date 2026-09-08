@@ -169,19 +169,19 @@ load) to ~2.7s with 0 failures on the same infrastructure.
 A business rule, not a sheet column — `brandOf(sn)` classifies a style number:
 
 - style number **< 50,000**, or an **`NR-xxx`**-coded style → **KK**
-- style number **≥ 50,000** → **R-Studio**
-- anything else (doesn't parse as a plain number and isn't `NR-`) → **Unclassified**
+- style number **≥ 50,000**, or a **`CH-xxx`**-coded style → **R-Studio**
+- anything else (doesn't parse as a plain number, isn't `NR-` or `CH-`) → **Unclassified**
 
 Verified against the live orders sheet: the numeric boundary is completely
 clean (no style has ever sat at 49999/50000/50001), and as of writing **zero**
-orders fall into Unclassified. `NR-xxx` and a `CH-xxx` prefix both exist in the
-design catalogues (hundreds of codes) but **neither has ever been ordered** —
-the rule is real and coded correctly, but currently inert; don't be surprised
-if the KK/R-Studio split accounts for 100% of live data with nothing landing
-in Unclassified. If `CH-xxx` (or anything else) ever gets ordered, it'll
+orders fall into Unclassified. `NR-xxx` and `CH-xxx` both exist in the design
+catalogues (hundreds of codes between them) but **neither has ever been
+ordered** — the rule is real and coded correctly, but currently inert; don't
+be surprised if the KK/R-Studio split accounts for 100% of live data with
+nothing landing in Unclassified. If a *third* prefix ever gets ordered, it'll
 correctly show up as Unclassified rather than being silently miscounted into
-either brand — that bucket exists specifically as a safety net, watch it after
-adding a new prefix.
+either brand — that bucket exists specifically as a safety net, and is the
+place to add the next prefix once it's confirmed.
 
 It's wired in as a value on the **global filter bar** (`BRAND_FILTER`,
 alongside `DATE_FROM`/`FILTER_MIN_QTY`/etc.), not a separate tab — selecting a
