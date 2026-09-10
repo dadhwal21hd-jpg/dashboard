@@ -25,6 +25,11 @@ export const CLUSTERS: ClusterDef[] = [
       "GNE (Nittu Di)",
       "GNE (Tushar Ji)",
       "FR Tushar ji",
+      // Oracle billing export spells this member differently (confirmed
+      // Sep 2026 during the Oracle-source cutover — verified as a genuine
+      // spelling variant, not a guess: "FRONTIER" is distinctive enough in
+      // this customer list that it isn't a coincidental match).
+      "FRONTIER CLOTTH HOUSE PVT.LTD",
     ],
   },
   {

@@ -781,6 +781,7 @@ body.customer-mode tr.cust-revealed::before{
   <div class="nav-tab" onclick="switchTab('stylenumbers',this)">🔢 Style Numbers</div>
   <div class="nav-tab" id="navtab-customers" onclick="switchTab('customers',this)">🏪 Customers</div>
   <div class="nav-tab" onclick="switchTab('reorder',this)">📡 Reorder Radar</div>
+  <div class="nav-tab" onclick="switchTab('returns',this)">↩️ Returns</div>
   <div class="nav-tab" onclick="switchTab('clusters',this)">🧩 Clusters</div>
   <div class="nav-tab" onclick="switchTab('insights',this)">💡 Insights</div>
 </div>
@@ -999,6 +1000,41 @@ body.customer-mode tr.cust-revealed::before{
   </div>
 </div>
 
+<!-- RETURNS (Goods Return) -->
+<div class="section" id="tab-returns">
+  <div class="sec-hdr">
+    <div><div class="sec-title">↩️ Returns</div><div class="sec-sub">Goods Return data from billing — already netted into every other number on this dashboard (units, revenue, per-customer and per-style totals). This tab is the return side on its own. Respects the date/brand filter above.</div></div>
+    <button class="btn btn-outline btn-sm" onclick="exportReturnsCSV()">⬇ Export CSV</button>
+  </div>
+
+  <div class="filter-row">
+    <span class="filter-label">Sort:</span>
+    <select id="returns-sort" onchange="renderReturns()">
+      <option value="qty">Units Returned</option>
+      <option value="rev">Return Value</option>
+    </select>
+    <input type="text" class="search-box" id="returns-search" placeholder="Search customer or style…" oninput="renderReturns()">
+    <span id="returns-count-label" style="font-size:11px;color:var(--text3);font-family:'IBM Plex Mono',monospace"></span>
+  </div>
+
+  <div class="kpi-grid" id="returns-kpi-grid" style="margin-bottom:14px"></div>
+
+  <div class="cards-grid">
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="card-title" style="padding:14px 16px 0">By Customer</div>
+      <table class="data-table"><thead><tr>
+        <th>#</th><th>Customer</th><th style="text-align:right">Units</th><th style="text-align:right">Value</th><th style="text-align:center">Styles</th>
+      </tr></thead><tbody id="returns-cust-tbody"></tbody></table>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="card-title" style="padding:14px 16px 0">By Style</div>
+      <table class="data-table"><thead><tr>
+        <th>#</th><th>Style</th><th style="text-align:right">Units</th><th style="text-align:right">Value</th><th style="text-align:center">Customers</th>
+      </tr></thead><tbody id="returns-style-tbody"></tbody></table>
+    </div>
+  </div>
+</div>
+
 <!-- CLUSTERS (auto-generated from top customers) -->
 <div class="section" id="tab-clusters">
   <div class="sec-hdr"><div><div class="sec-title">Customer Buying Clusters</div><div class="sec-sub">Grouped by buying behavior — auto-generated from your data</div></div></div>
@@ -1074,6 +1110,7 @@ body.customer-mode tr.cust-revealed::before{
 // ══════════════════════════════════════════════════════════════
 let D = null;            // full processed data
 let FILTERED_RAW = [];   // date-filtered raw rows
+let FILTERED_RETURNS = []; // same filter, applied to D.returns_raw
 let DATE_FROM = null;
 let DATE_TO   = null;
 let activeCustRow = null;
@@ -1565,6 +1602,21 @@ function rowDateStr(r) {
   return String(r.dt).slice(0,10);
 }
 
+/** Shared by sales rows and Goods Return rows alike — same date/qty/price/
+ *  brand criteria applied uniformly to both, so "filter to 2025 + KK" means
+ *  the same thing on either side of the net-figures subtraction. */
+function passesGlobalFilter(r) {
+  if (DATE_FROM||DATE_TO) {
+    const ds = rowDateStr(r); if (!ds) return false;
+    if (DATE_FROM && ds < DATE_FROM) return false;
+    if (DATE_TO   && ds > DATE_TO)   return false;
+  }
+  if (r.q < FILTER_MIN_QTY || r.q > FILTER_MAX_QTY) return false;
+  if (r.p && (r.p < FILTER_MIN_PRICE || r.p > FILTER_MAX_PRICE)) return false;
+  if (BRAND_FILTER !== 'all' && brandOf(r.sn) !== BRAND_FILTER) return false;
+  return true;
+}
+
 function applyGlobalFilter() {
   const f = document.getElementById('date-from').value;
   const t = document.getElementById('date-to').value;
@@ -1576,17 +1628,8 @@ function applyGlobalFilter() {
   BRAND_FILTER = document.getElementById('brand-filter').value || 'all';
 
   const active = anyGlobalFilterActive();
-  FILTERED_RAW = active ? D.raw.filter(r => {
-    if (DATE_FROM||DATE_TO) {
-      const ds = rowDateStr(r); if (!ds) return false;
-      if (DATE_FROM && ds < DATE_FROM) return false;
-      if (DATE_TO   && ds > DATE_TO)   return false;
-    }
-    if (r.q < FILTER_MIN_QTY || r.q > FILTER_MAX_QTY) return false;
-    if (r.p && (r.p < FILTER_MIN_PRICE || r.p > FILTER_MAX_PRICE)) return false;
-    if (BRAND_FILTER !== 'all' && brandOf(r.sn) !== BRAND_FILTER) return false;
-    return true;
-  }) : [...D.raw];
+  FILTERED_RAW     = active ? D.raw.filter(passesGlobalFilter) : [...D.raw];
+  FILTERED_RETURNS = active ? (D.returns_raw||[]).filter(passesGlobalFilter) : [...(D.returns_raw||[])];
 
   _FA = null; // invalidate cache
   const st = document.getElementById('global-filter-status');
@@ -1639,6 +1682,25 @@ function getFA() {
       if(!isNaN(d)){const mk=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;moA[mk]=(moA[mk]||0)+r.q;}
     }
   }
+
+  // Net Goods Returns into the same accumulators — mirrors processor.ts's
+  // server-side netting exactly, just re-run here so it survives the client
+  // filter bar (date/qty/price/brand) instead of only applying to the
+  // server's unfiltered totals. Only qty/revenue are subtracted: a return
+  // isn't a new customer or style variant (never touches the .cu/.st reach
+  // Sets) and isn't dispatch activity (never touches monthly `moA`).
+  const retRows = FILTERED_RETURNS.length < (D.returns_raw||[]).length ? FILTERED_RETURNS : (D.returns_raw||[]);
+  for (const r of retRows) {
+    if (!r.c||!r.sc||!r.sn) continue;
+    const rev=r.q*r.p; tQ-=r.q; tR-=rev;
+    if (!scA[r.sc]) scA[r.sc]={qty:0,rev:0,cu:new Set(),st:new Set()};
+    scA[r.sc].qty-=r.q; scA[r.sc].rev-=rev;
+    if (!cA[r.c]) cA[r.c]={qty:0,rev:0,sc:new Set(),st:new Set()};
+    cA[r.c].qty-=r.q; cA[r.c].rev-=rev;
+    if (!stA[r.sn]) stA[r.sn]={qty:0,rev:0,sc:r.sc,price:0,cu:new Set()};
+    stA[r.sn].qty-=r.q; stA[r.sn].rev-=rev;
+  }
+
   _FA = {
     totalQty:tQ, totalRev:Math.round(tR),
     subcuts: Object.entries(scA).filter(([sc])=>sc).map(([sc,v])=>({name:sc,qty:v.qty,revenue:Math.round(v.rev),customers:v.cu.size,styles:v.st.size})).sort((a,b)=>b.qty-a.qty),
@@ -2170,6 +2232,24 @@ function openDrillByName(custName, rowEl) {
       if (r.p > 0) st[r.sn].price = r.p;
       if (r.d) st[r.sn].dates.add(r.d);
     }
+    // Net Goods Returns into this customer's (or cluster's) breakdown too —
+    // otherwise their top-line qty (netted via getFA()) would disagree with
+    // what this drill-down shows for the same customer. Not touched: .dates
+    // (a return isn't a reorder) — same rule as everywhere else returns net in.
+    for (const r of FILTERED_RETURNS) {
+      const matches = isCluster
+        ? (clusterMembers && clusterMembers.has(r.c))
+        : (r.c === custName);
+      if (!matches || !r.sc || !r.sn) continue;
+      const rev = r.q * r.p;
+      if (!scAcc[r.sc]) scAcc[r.sc] = { qty:0, rev:0, styles:{} };
+      scAcc[r.sc].qty -= r.q;
+      scAcc[r.sc].rev -= rev;
+      const st = scAcc[r.sc].styles;
+      if (!st[r.sn]) st[r.sn] = { qty:0, rev:0, price:0, dates:new Set() };
+      st[r.sn].qty -= r.q;
+      st[r.sn].rev -= rev;
+    }
     drillData = {};
     for (const [sc, v] of Object.entries(scAcc)) {
       const topStyles = Object.entries(v.styles)
@@ -2418,6 +2498,97 @@ function exportReorderCSV() {
 }
 
 // ══════════════════════════════════════════════════════════════
+// RETURNS (Goods Return) — filter-aware, same FILTERED_RETURNS getFA() nets
+// dashboard-wide with. Unlike Reorder Radar, this respects the date filter:
+// there's no cadence math here to break by narrowing the window, so "returns
+// in 2025" is exactly what it sounds like.
+// ══════════════════════════════════════════════════════════════
+
+function currentReturnsRows() {
+  return FILTERED_RETURNS.length < (D.returns_raw||[]).length ? FILTERED_RETURNS : (D.returns_raw||[]);
+}
+
+/** {byCustomer, byStyle, totalQty, totalRev}, search-filtered. Shared by the
+ *  render function and the CSV export so they can never disagree. */
+function returnsBreakdown(search) {
+  const byCust = {}, byStyle = {};
+  let totalQty = 0, totalRev = 0;
+  for (const r of currentReturnsRows()) {
+    if (!r.c || !r.sn) continue;
+    if (search && !r.c.toLowerCase().includes(search) && !String(r.sn).toLowerCase().includes(search)) continue;
+    const rev = r.q * r.p;
+    totalQty += r.q; totalRev += rev;
+    if (!byCust[r.c]) byCust[r.c] = { qty:0, rev:0, styles:new Set() };
+    byCust[r.c].qty += r.q; byCust[r.c].rev += rev; byCust[r.c].styles.add(r.sn);
+    if (!byStyle[r.sn]) byStyle[r.sn] = { qty:0, rev:0, sc:r.sc, custs:new Set() };
+    byStyle[r.sn].qty += r.q; byStyle[r.sn].rev += rev; byStyle[r.sn].custs.add(r.c);
+  }
+  return { byCust, byStyle, totalQty, totalRev };
+}
+
+function renderReturns() {
+  const search = document.getElementById('returns-search').value.trim().toLowerCase();
+  const sortBy = document.getElementById('returns-sort').value;
+  const { byCust, byStyle, totalQty, totalRev } = returnsBreakdown(search);
+
+  const custCount = Object.keys(byCust).length, styleCount = Object.keys(byStyle).length;
+  document.getElementById('returns-count-label').textContent = currentReturnsRows().length
+    ? `${custCount} customers · ${styleCount} styles`
+    : '';
+
+  if (!currentReturnsRows().length) {
+    const configured = !!(D.returns_raw && D.returns_raw.length);
+    document.getElementById('returns-kpi-grid').innerHTML = '';
+    document.getElementById('returns-cust-tbody').innerHTML =
+      `<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text3)">${configured ? 'No returns match the current filter.' : 'No Goods Return data — GOOGLE_RETURNS_RANGE may not be configured.'}</td></tr>`;
+    document.getElementById('returns-style-tbody').innerHTML = '';
+    return;
+  }
+
+  // Return rate: returned units as a share of gross (pre-return) units in the
+  // same filtered window — the honest denominator is sold+returned, not just
+  // sold, since a returned unit was still dispatched.
+  const grossQty = (FILTERED_RAW.length < D.raw.length ? FILTERED_RAW : D.raw).reduce((s,r)=>s+r.q, 0);
+  const rate = (grossQty + totalQty) > 0 ? (totalQty / (grossQty + totalQty)) * 100 : 0;
+
+  document.getElementById('returns-kpi-grid').innerHTML = `
+    <div class="kpi-card" style="--ac:#c0392b"><div class="kpi-label">Units Returned</div><div class="kpi-value">${fN(totalQty)}</div><div class="kpi-sub">${custCount} customers</div></div>
+    <div class="kpi-card" style="--ac:#b5622a"><div class="kpi-label">Return Value</div><div class="kpi-value">${fmt(totalRev)}</div><div class="kpi-sub">at billed price</div></div>
+    <div class="kpi-card" style="--ac:#4a6fa5"><div class="kpi-label">Return Rate</div><div class="kpi-value">${rate.toFixed(1)}%</div><div class="kpi-sub">of gross units dispatched, same filter</div></div>
+    <div class="kpi-card" style="--ac:#2a8a72"><div class="kpi-label">Styles Affected</div><div class="kpi-value">${styleCount}</div><div class="kpi-sub">distinct styles returned</div></div>`;
+
+  const custRows = Object.entries(byCust).map(([c,v]) => ({ name:c, qty:v.qty, rev:v.rev, styles:v.styles.size }));
+  custRows.sort((a,b) => sortBy === 'rev' ? b.rev - a.rev : b.qty - a.qty);
+  document.getElementById('returns-cust-tbody').innerHTML = custRows.map((c,i) => `<tr>
+    <td>${rn(i)}</td>
+    <td style="font-weight:500">${buyerLabel(c.name, i)}</td>
+    <td class="num"><strong>${fN(c.qty)}</strong></td>
+    <td class="num">${fmt(c.rev)}</td>
+    <td style="text-align:center;font-family:'IBM Plex Mono',monospace">${c.styles}</td>
+  </tr>`).join('');
+
+  const styleRows = Object.entries(byStyle).map(([sn,v]) => ({ n:sn, sc:v.sc, qty:v.qty, rev:v.rev, custs:v.custs.size }));
+  styleRows.sort((a,b) => sortBy === 'rev' ? b.rev - a.rev : b.qty - a.qty);
+  document.getElementById('returns-style-tbody').innerHTML = styleRows.map((s,i) => `<tr>
+    <td>${rn(i)}</td>
+    <td><strong style="font-family:'IBM Plex Mono',monospace;color:${scColor(s.sc)}">#${esc(s.n)}</strong>${BRAND_FILTER==='all'?brandBadge(s.n):''}</td>
+    <td class="num"><strong>${fN(s.qty)}</strong></td>
+    <td class="num">${fmt(s.rev)}</td>
+    <td style="text-align:center;font-family:'IBM Plex Mono',monospace">${s.custs}</td>
+  </tr>`).join('');
+}
+
+function exportReturnsCSV() {
+  const search = document.getElementById('returns-search').value.trim().toLowerCase();
+  const tag = BRAND_FILTER!=='all' ? '_'+BRAND_FILTER : '';
+  let c = 'Type,Key,Units,Value INR,Distinct Other Side\n';
+  const { byCust, byStyle } = returnsBreakdown(search);
+  Object.entries(byCust).forEach(([name,v]) => { c += `Customer,${csvCell(name)},${v.qty},${Math.round(v.rev)},${v.styles.size}\n`; });
+  Object.entries(byStyle).forEach(([sn,v]) => { c += `Style,${csvCell(sn)},${v.qty},${Math.round(v.rev)},${v.custs.size}\n`; });
+  dl(c, `Returns${tag}.csv`);
+}
+
+// ══════════════════════════════════════════════════════════════
 // CLUSTERS (auto-generated)
 // ══════════════════════════════════════════════════════════════
 function renderClusters() {
@@ -2478,6 +2649,7 @@ function renderAll() {
   renderSG();
   renderCusts();
   renderReorderRadar();
+  renderReturns();
   renderClusters();
   renderInsights();
 }
@@ -2886,7 +3058,7 @@ document.addEventListener('keydown', e => {
 // If data was injected by process_csv.py, auto-load it
 /*__DATA__*/
 if(typeof DATA!=='undefined'&&DATA){
-  D=DATA;FILTERED_RAW=[...D.raw];
+  D=DATA;FILTERED_RAW=[...D.raw];FILTERED_RETURNS=[...(D.returns_raw||[])];
   document.addEventListener('DOMContentLoaded',()=>initDashboard());
 }
 </script>

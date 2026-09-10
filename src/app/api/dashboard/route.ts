@@ -18,7 +18,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { fetchSheetRows } from "@/lib/sheets";
+import { fetchSheetRows, fetchReturnsRows } from "@/lib/sheets";
 import { process as runProcessor } from "@/lib/processor";
 import { fetchDesignMap, designsConfigured } from "@/lib/designs";
 import { mintDesignToken } from "@/lib/signing";
@@ -36,8 +36,11 @@ export async function GET(req: NextRequest) {
 
   try {
     // ── Fetch + process ───────────────────────────────────────────────────
-    const { rows, fetchedAt, fromCache } = await fetchSheetRows(force);
-    const data = runProcessor(rows);
+    const [{ rows, fetchedAt, fromCache }, { rows: returnRows }] = await Promise.all([
+      fetchSheetRows(force),
+      fetchReturnsRows(force),
+    ]);
+    const data = runProcessor(rows, returnRows);
 
     // Design thumbnails (optional feature — absent env vars ⇒ empty map).
     // Only the *style numbers that have an image and actually appear in the

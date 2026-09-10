@@ -53,8 +53,15 @@ Key pieces:
   **Most client-side features are computed from `raw`, not from the pre-aggregated
   arrays**, because the global filter bar must be able to re-derive everything.
 - `subcuts` / `customers` / `style_groups` / `monthly` — pre-aggregated views.
-- `drill` / `clustered_drill` — customer → sub cut → style, precomputed.
+  **Net of Goods Returns** — see "Oracle source + Goods Returns" below.
+- `drill` / `clustered_drill` — customer → sub cut → style, precomputed. Also
+  net of returns.
 - `cluster_membership` — original customer name → cluster name.
+- `returns_raw: RawRow[]` — Goods Return rows, same shape as `raw`, positive
+  quantities (units returned, not negated). Empty when returns aren't
+  configured. Everything above already has these netted in server-side; this
+  is for the client to net them again under its own filters and for the
+  Returns tab — see below.
 
 ## Client-side conventions (template)
 
@@ -254,6 +261,90 @@ available" column (that sheet is titled "...to Ecommerce OB" — almost
 certainly web-store stock, not wholesale/factory stock; surfacing it without
 confirming that first would risk being actively misleading).
 
+The specific numbers cited above (Seasons Enterprises, 411 days) were measured
+against the old source sheet, before the Oracle cutover below — illustrative
+of the feature's logic, not current live figures.
+
+## Oracle source + Goods Returns (Sep 2026 cutover)
+
+The orders sheet was replaced outright — not merged — with an export from the
+Oracle billing system, the actual system of record. Spreadsheet
+"ORACLE OUT LIVE": `ORACLE_UPDATED` (sales) and `GOODS_RETURN` (returns) are
+both read via `GOOGLE_SHEET_ID`/`GOOGLE_SHEET_RANGE`/`GOOGLE_RETURNS_RANGE` —
+same service account, same spreadsheet, two tabs. A person keeps this "live"
+tab updated from Oracle until API access exists; Supabase is the plan after
+that, not before — don't build toward it speculatively.
+
+**A large historical tab (`Sheet5`, 2021–2025, ~47k rows) exists in the same
+spreadsheet but is deliberately NOT read** — the user is cleaning it
+separately and will hand it over later. `Sheet5`'s data shape is messier than
+the two live tabs (20+ `Item Description` categories, inconsistent `Design`
+formats with no dot separator, alphanumeric suffixes) — don't assume today's
+parsing handles it; re-verify against a real sample before wiring it in.
+
+**Oracle's `Design` column packs sub-cut + style number into one cell** — e.g.
+`G-SGONC.84752` → subcut `SGONC`, style `84752` (confirmed with the user).
+`parseDesign()` in [src/lib/processor.ts](src/lib/processor.ts) does the
+split; `detectColumns()` falls back to it when no dedicated style/subcut
+columns exist, so an old-shape sheet (dedicated columns) still works
+unchanged if this is ever pointed at one again. Both `ORACLE_UPDATED` and
+`GOODS_RETURN` use this format; verified against real data, not assumed.
+
+**Brand comes for free** — Oracle's `Item Description` is literally `"GOWN"`
+(R-Studio) or `"KK GOWN"`/`"KK GOWN VELVET"` (KK), and this lines up exactly
+with the existing numeric `brandOf()` rule once the style number is correctly
+extracted from `Design` — confirmed against real data (KK-prefixed rows'
+style numbers were all <50,000, plain GOWN rows' all ≥50,000). No brand field
+was added to `RawRow`; `brandOf()` needed no changes.
+
+**Oracle dates are `DD/Mon/YY` *and* `DD-Mon-YY`** — both separators occur
+within the same sheet (confirmed: ~700/2244 rows in one snapshot used
+hyphens). `parseOracleDate()` handles both; `parseDate()` tries it before the
+original numeric-format patterns, which stay in place for compatibility.
+
+**Goods Returns net dashboard-wide**, not just in a separate view — confirmed
+with the user. Netting happens in two places that must stay in sync:
+- Server, [src/lib/processor.ts](src/lib/processor.ts): the same accumulators
+  the sales loop builds (`subcutAcc`/`custAcc`/`styleAcc`/`drill`/totals) get
+  return rows subtracted from them in a second pass, keyed by style number
+  (and customer, for the customer/drill accumulators) — not by exact bill
+  match.
+- Client, `getFA()` in the template: re-runs the same subtraction over
+  `FILTERED_RETURNS` (a sibling to `FILTERED_RAW`, filtered by the same
+  `passesGlobalFilter()`), so a filter (date, brand, qty, price) doesn't
+  silently revert figures to gross. `openDrillByName()`'s filtered-recompute
+  path does the same for the one customer/cluster being drilled into.
+
+**Why returns aren't merged into `raw` as negative-quantity rows**: `parseQty()`
+clamps anything ≤0 to zero, and dozens of places in the ~2,700-line template
+assume `r.q` is positive (filters, percentages, display). Retrofitting
+negative quantities into the one array everything already trusts would risk
+breaking things far from the change. `returns_raw` is a same-shaped sibling
+array instead (positive quantities), and every net figure is produced by
+explicit subtraction, not by mixing sign-flipped rows into `raw`.
+
+**Aggregate netting, not exact-bill-match** — confirmed with the user. Most
+Goods Return bill numbers don't resolve to a sale in whatever window is
+currently loaded (a return can reference a sale from before that window, or
+from `Sheet5`, not yet provided), so matching would silently drop most
+returns. A net total **can go negative** for a customer/style with no
+matching sale in the loaded data — left as-is deliberately, since clamping to
+zero would hide a real data gap instead of surfacing it.
+
+**Returns deliberately never touch**: `.dates`/`freq` accumulators anywhere
+(a return isn't a reorder), `monthlyAcc`/`moA` (a return isn't dispatch
+activity), and **Reorder Radar's cadence math** (`reorderRadarRows()` only
+ever reads `D.raw` — no code changes were needed there, it's naturally
+unaffected).
+
+New **Returns tab** (`renderReturns()`, `returnsBreakdown()`,
+`exportReturnsCSV()`): by-customer and by-style totals plus a return-rate KPI
+(returned ÷ (gross sold + returned) in the current filter). Unlike Reorder
+Radar, this tab respects the date filter — there's no cadence math here that
+narrowing the window would break. `GOODS_RETURN` has no reason/cause column,
+so there's no by-reason breakdown; don't add one without a real column to
+back it.
+
 ## Customer clusters
 
 [src/lib/clusters.ts](src/lib/clusters.ts) hand-maps duplicate/related customer
@@ -263,6 +354,16 @@ edit the array, commit, push; Vercel redeploys.
 
 This is why several dashboard views have a "clustered" toggle (`CUST_VIEW`) and
 why some analyses should note when two rows are really one buyer.
+
+**Re-audit this against Oracle's naming after the cutover above** — Oracle
+doesn't necessarily spell a customer the same way the old sheet did. One
+confirmed addition already made: `FRONTIER CLOTTH HOUSE PVT.LTD` → Frontier
+Raas Group (the shared word "FRONTIER" is distinctive enough in this customer
+list to trust). Several other Oracle names share only generic words with
+existing clusters (e.g. "fashion", "house") — deliberately **not** merged
+without confirmation, since a wrong merge misrepresents a real business
+relationship. Worth a proper pass once `Sheet5` brings in the full customer
+list.
 
 ## Working notes
 

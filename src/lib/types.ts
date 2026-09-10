@@ -84,6 +84,12 @@ export interface DashboardData {
   monthly: MonthlyEntry[];
   drill: DrillData;
   raw: RawRow[];
+  /** Goods Return rows, same shape as `raw`. Empty when GOOGLE_RETURNS_RANGE
+   *  isn't configured — every figure already nets these out server-side
+   *  (subcuts/customers/style_groups/monthly/totals); this is for the client
+   *  to net them again under its own filters (getFA()) and for the Returns
+   *  tab. Quantities here are positive (units returned), not negated. */
+  returns_raw: RawRow[];
   /** Clustered view of customers — same shape as `customers`, members merged. */
   clustered_customers: Customer[];
   /** Drill-down data keyed by cluster name (merged across all member customers). */

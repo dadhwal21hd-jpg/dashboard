@@ -4,6 +4,10 @@
  * Core analytics output matches the original Python script byte-for-byte.
  * Adds clustered_customers, clustered_drill, cluster_membership for the
  * Individual/Clustered toggle in the Customers tab.
+ *
+ * Also reads the Oracle billing export (source of truth as of the 2026
+ * cutover) and, optionally, its Goods Return tab — see parseDesign() and
+ * the "returns" parameter below for what's specific to that source.
  */
 import type {
   DashboardData,
@@ -48,10 +52,43 @@ export function bankRound(n: number): number {
   return floor % 2 === 0 ? floor : floor + 1;
 }
 
-/** Parse dd/mm/yyyy → Date. Returns null on failure. Mirrors Python's parse_date. */
+const MONTH_ABBR: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+  jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+};
+
+/**
+ * Parse Oracle's "DD/Mon/YY" or "DD-Mon-YY" date format (e.g. "12/Aug/26",
+ * "27-Aug-26" — both separators occur within the same Oracle export; verified
+ * against real data, not assumed). Two-digit year: 20xx, per business context
+ * (no records predate 2000). Returns null on failure.
+ */
+function parseOracleDate(s: string): Date | null {
+  const m = s.match(/^(\d{1,2})[/-]([A-Za-z]{3})[/-](\d{2,4})$/);
+  if (!m) return null;
+  const mo = MONTH_ABBR[m[2].toLowerCase()];
+  if (!mo) return null;
+  const day = parseInt(m[1], 10);
+  const yRaw = parseInt(m[3], 10);
+  const y = m[3].length === 2 ? 2000 + yRaw : yRaw;
+  if (day < 1 || day > 31) return null;
+  const dt = new Date(Date.UTC(y, mo - 1, day));
+  if (dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === day) {
+    return dt;
+  }
+  return null;
+}
+
+/** Parse dd/mm/yyyy → Date. Returns null on failure. Mirrors Python's parse_date.
+ *  Tries Oracle's "DD-Mon-YY" / "DD/Mon/YY" format first (cheap regex miss for
+ *  the numeric formats below), then falls back to the original numeric ones —
+ *  kept for compatibility with any non-Oracle sheet this might ever read. */
 export function parseDate(d: unknown): Date | null {
   const s = String(d ?? "").trim();
   if (!s) return null;
+
+  const oracle = parseOracleDate(s);
+  if (oracle) return oracle;
 
   // Try each format in order, same as Python
   const patterns: Array<[RegExp, (m: RegExpMatchArray) => [number, number, number]]> = [
@@ -92,41 +129,135 @@ function isoDate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-// ─── MAIN PROCESSOR ─────────────────────────────────────────────────────────
+/**
+ * Oracle packs sub-cut style + style number into one "Design" cell, e.g.
+ * "G-SGONC.84752" → subcut "SGONC", style "84752" (confirmed against real
+ * data with the user, Sep 2026). The leading "<letters>-" is a constant
+ * marker, not part of either dimension, so it's discarded.
+ *
+ * Best-effort: a cell with no "." (seen in some historical rows outside this
+ * cutover's scope) yields the whole remainder as the style with no subcut,
+ * rather than throwing — one unparseable design must not take down the
+ * import, same philosophy as everywhere else bad sheet data is handled.
+ */
+export function parseDesign(s: unknown): { subcut: string; style: string } | null {
+  const raw = String(s ?? "").trim();
+  if (!raw) return null;
+  const noPrefix = raw.replace(/^[A-Za-z]+-/, "");
+  const dot = noPrefix.indexOf(".");
+  if (dot === -1) return { subcut: "", style: noPrefix };
+  const subcut = noPrefix.slice(0, dot).trim();
+  const style = noPrefix.slice(dot + 1).trim();
+  if (!style) return null;
+  return { subcut, style };
+}
+
+// ─── COLUMN DETECTION ───────────────────────────────────────────────────────
 
 const NEEDED: Record<string, string[]> = {
-  style:  ["style number", "style_number", "style no", "style"],
-  subcut: ["sub cut style", "sub_cut_style", "subcut", "cut style", "sub cut"],
-  qty:    ["qty", "quantity", "units"],
-  cust:   ["order sent to", "customer", "order_sent_to", "party"],
-  price:  ["price", "mrp", "rate"],
-  date:   ["customer dispatch date", "dispatch date", "date", "dispatch_date"],
+  qty:   ["qty", "quantity", "units"],
+  cust:  ["order sent to", "customer", "order_sent_to", "party", "buyer name"],
+  price: ["price", "mrp", "rate", "bp"],
+  date:  ["customer dispatch date", "dispatch date", "date", "dispatch_date", "bill dt."],
 };
+const STYLE_ALIASES  = ["style number", "style_number", "style no", "style"];
+const SUBCUT_ALIASES = ["sub cut style", "sub_cut_style", "subcut", "cut style", "sub cut"];
+const DESIGN_ALIASES = ["design"];
 
-export function process(rows: SheetRow[]): DashboardData {
+interface ColumnMap {
+  qty: string;
+  cust: string;
+  price: string;
+  date: string;
+  /** Set when the sheet has a dedicated style-number column (old-sheet shape). */
+  style?: string;
+  /** Set alongside `style` when the sheet also has a dedicated subcut column. */
+  subcut?: string;
+  /** Set when style+subcut instead come from a compound "Design" column
+   *  (Oracle's shape) — mutually exclusive with `style` in practice. */
+  design?: string;
+}
+
+/** Case-insensitive column detection, tolerant of either shape: dedicated
+ *  style/subcut columns, or a compound "Design" column to derive both from. */
+function detectColumns(headers: string[], sourceLabel: string): ColumnMap {
+  const headersLower: Record<string, string> = {};
+  for (const h of headers) headersLower[h.toLowerCase().trim()] = h;
+
+  const colMap: Partial<ColumnMap> = {};
+  for (const [key, candidates] of Object.entries(NEEDED)) {
+    for (const c of candidates) {
+      if (c in headersLower) { (colMap as Record<string, string>)[key] = headersLower[c]; break; }
+    }
+    if (!(key in colMap)) {
+      throw new Error(
+        `${sourceLabel}: cannot find column for '${key}'. Found columns: ${headers.join(", ")}`,
+      );
+    }
+  }
+
+  for (const c of STYLE_ALIASES)  if (c in headersLower) { colMap.style  = headersLower[c]; break; }
+  for (const c of SUBCUT_ALIASES) if (c in headersLower) { colMap.subcut = headersLower[c]; break; }
+  for (const c of DESIGN_ALIASES) if (c in headersLower) { colMap.design = headersLower[c]; break; }
+
+  if (!colMap.style && !colMap.design) {
+    throw new Error(
+      `${sourceLabel}: cannot find a style-number column, or a "Design" column to derive one from. ` +
+      `Found columns: ${headers.join(", ")}`,
+    );
+  }
+
+  return colMap as ColumnMap;
+}
+
+interface ParsedRow {
+  cust: string;
+  sc: string;
+  sn: string;
+  qty: number;
+  price: number;
+  date: string;
+}
+
+/** One row → the five fields every aggregation below needs, using whichever
+ *  column shape detectColumns() found (dedicated columns or Design-derived). */
+function extractRow(colMap: ColumnMap, r: SheetRow): ParsedRow {
+  const qty   = parseQty(r[colMap.qty]);
+  const price = parsePrice(r[colMap.price]);
+  const cust  = (r[colMap.cust] || "Unknown").trim() || "Unknown";
+  const date  = (r[colMap.date] || "").trim();
+
+  let sc: string, sn: string;
+  if (colMap.style) {
+    sn = (r[colMap.style] || "Unknown").trim() || "Unknown";
+    sc = (colMap.subcut ? r[colMap.subcut] : "") || "Unknown";
+    sc = sc.trim() || "Unknown";
+  } else {
+    const parsed = parseDesign(r[colMap.design!]);
+    sn = parsed?.style || "Unknown";
+    sc = parsed?.subcut || "Unknown";
+  }
+
+  return { cust, sc, sn, qty, price, date };
+}
+
+// ─── MAIN PROCESSOR ─────────────────────────────────────────────────────────
+
+/**
+ * @param rows Sales/dispatch rows (required).
+ * @param returnRows Goods Return rows (optional — omit or pass [] when the
+ *   returns tab isn't configured; every figure stays gross, dashboard renders
+ *   exactly as it did before returns existed).
+ */
+export function process(rows: SheetRow[], returnRows: SheetRow[] = []): DashboardData {
   if (!rows.length) {
     throw new Error("Sheet has no data rows.");
   }
 
-  // ── Detect required columns (case-insensitive) ──────────────────────────
-  const headers = Object.keys(rows[0]);
-  const headersLower: Record<string, string> = {};
-  for (const h of headers) headersLower[h.toLowerCase().trim()] = h;
-
-  const colMap: Record<string, string> = {};
-  for (const [key, candidates] of Object.entries(NEEDED)) {
-    for (const c of candidates) {
-      if (c in headersLower) {
-        colMap[key] = headersLower[c];
-        break;
-      }
-    }
-    if (!(key in colMap)) {
-      throw new Error(
-        `Cannot find column for '${key}'. Found columns: ${headers.join(", ")}`,
-      );
-    }
-  }
+  const colMap = detectColumns(Object.keys(rows[0]), "Sales sheet");
+  const returnsColMap = returnRows.length
+    ? detectColumns(Object.keys(returnRows[0]), "Goods Return sheet")
+    : null;
 
   // ── Accumulators ────────────────────────────────────────────────────────
   type SubAcc   = { qty: number; rev: number; custs: Set<string>; styles: Set<string> };
@@ -171,13 +302,7 @@ export function process(rows: SheetRow[]): DashboardData {
   const allDates: Date[] = [];
 
   for (const r of rows) {
-    const qty   = parseQty(r[colMap.qty]);
-    const price = parsePrice(r[colMap.price]);
-    const cust  = (r[colMap.cust]   || "Unknown").trim() || "Unknown";
-    const sc    = (r[colMap.subcut] || "Unknown").trim() || "Unknown";
-    const sn    = (r[colMap.style]  || "Unknown").trim() || "Unknown";
-    const date  = (r[colMap.date]   || "").trim();
-
+    const { cust, sc, sn, qty, price, date } = extractRow(colMap, r);
     const rev = qty * price;
     totalQty += qty;
     totalRev += rev;
@@ -204,6 +329,45 @@ export function process(rows: SheetRow[]): DashboardData {
     dr.qty += qty; dr.rev += rev;
     if (price > 0) dr.price = price;
     if (date) dr.dates.add(date);
+  }
+
+  // ── Goods Returns: net into the same accumulators, by (customer, style) ──
+  // Deliberately NOT touching `.dates` anywhere (style/customer reorder-freq
+  // signals, and monthlyAcc's dispatch trend) — a return isn't a new order
+  // and shouldn't look like reorder activity or dispatch volume. Only qty/
+  // revenue are adjusted. Matched in aggregate, not against a specific sale
+  // line: Goods Return bill numbers don't reliably resolve to a sale in the
+  // currently-loaded window (confirmed against real data — a return can
+  // reference a sale outside it, or in historical data not yet loaded), so
+  // exact-bill matching would silently drop most returns. Net totals CAN go
+  // negative for a given customer/style if its original sale isn't in the
+  // currently-loaded data — surfaces the gap rather than hiding it.
+  const returns: RawRow[] = [];
+  if (returnsColMap) {
+    for (const r of returnRows) {
+      const { cust, sc, sn, qty, price, date } = extractRow(returnsColMap, r);
+      const rev = qty * price;
+      totalQty -= qty;
+      totalRev -= rev;
+
+      const sub = getSub(sc);
+      sub.qty -= qty; sub.rev -= rev;
+
+      const cu = getCust(cust);
+      cu.qty -= qty; cu.rev -= rev;
+
+      const st = getStyle(sn);
+      st.qty -= qty; st.rev -= rev;
+
+      const dr = getDrill(cust, sc, sn);
+      dr.qty -= qty; dr.rev -= rev;
+
+      const dt = parseDate(date);
+      returns.push({
+        c: cust, sc, sn, q: qty, p: Math.trunc(price),
+        d: date, dt: dt ? isoDate(dt) : null,
+      });
+    }
   }
 
   // ── Sub cuts (sorted by qty desc, exclude Unknown) ───────────────────────
@@ -436,14 +600,13 @@ export function process(rows: SheetRow[]): DashboardData {
 
   // ── Raw rows (compact, for date filtering on client) ────────────────────
   const raw: RawRow[] = rows.map((r) => {
-    const dt = parseDate(r[colMap.date]);
+    const { cust, sc, sn, qty, price, date } = extractRow(colMap, r);
+    const dt = parseDate(date);
     return {
-      c:  r[colMap.cust]   || "",
-      sc: r[colMap.subcut] || "",
-      sn: r[colMap.style]  || "",
-      q:  parseQty(r[colMap.qty]),
-      p:  Math.trunc(parsePrice(r[colMap.price])),
-      d:  r[colMap.date]   || "",
+      c: cust, sc, sn,
+      q: qty,
+      p: Math.trunc(price),
+      d: date,
       dt: dt ? isoDate(dt) : null,
     };
   });
@@ -459,6 +622,7 @@ export function process(rows: SheetRow[]): DashboardData {
     monthly,
     drill: drillJson,
     raw,
+    returns_raw: returns,
     clustered_customers: clusteredCustomers,
     clustered_drill: clusteredDrill,
     cluster_membership: clusterMembership,
