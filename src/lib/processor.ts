@@ -160,9 +160,10 @@ const NEEDED: Record<string, string[]> = {
   price: ["price", "mrp", "rate", "bp"],
   date:  ["customer dispatch date", "dispatch date", "date", "dispatch_date", "bill dt."],
 };
-const STYLE_ALIASES  = ["style number", "style_number", "style no", "style"];
-const SUBCUT_ALIASES = ["sub cut style", "sub_cut_style", "subcut", "cut style", "sub cut"];
-const DESIGN_ALIASES = ["design"];
+const STYLE_ALIASES     = ["style number", "style_number", "style no", "style"];
+const SUBCUT_ALIASES    = ["sub cut style", "sub_cut_style", "subcut", "cut style", "sub cut"];
+const DESIGN_ALIASES    = ["design"];
+const ITEM_DESC_ALIASES = ["item description", "item_description"];
 
 interface ColumnMap {
   qty: string;
@@ -176,6 +177,11 @@ interface ColumnMap {
   /** Set when style+subcut instead come from a compound "Design" column
    *  (Oracle's shape) — mutually exclusive with `style` in practice. */
   design?: string;
+  /** Oracle's "Item Description" (e.g. "GOWN", "KK GOWN", "SAMPLE",
+   *  "DUPATTA") — optional; absent on the old-sheet shape. Used only to tell
+   *  Gown-family rows (which the brand split applies to) from everything
+   *  else, not surfaced verbatim to the client. */
+  itemDesc?: string;
 }
 
 /** Case-insensitive column detection, tolerant of either shape: dedicated
@@ -196,9 +202,10 @@ function detectColumns(headers: string[], sourceLabel: string): ColumnMap {
     }
   }
 
-  for (const c of STYLE_ALIASES)  if (c in headersLower) { colMap.style  = headersLower[c]; break; }
-  for (const c of SUBCUT_ALIASES) if (c in headersLower) { colMap.subcut = headersLower[c]; break; }
-  for (const c of DESIGN_ALIASES) if (c in headersLower) { colMap.design = headersLower[c]; break; }
+  for (const c of STYLE_ALIASES)     if (c in headersLower) { colMap.style    = headersLower[c]; break; }
+  for (const c of SUBCUT_ALIASES)    if (c in headersLower) { colMap.subcut   = headersLower[c]; break; }
+  for (const c of DESIGN_ALIASES)    if (c in headersLower) { colMap.design   = headersLower[c]; break; }
+  for (const c of ITEM_DESC_ALIASES) if (c in headersLower) { colMap.itemDesc = headersLower[c]; break; }
 
   if (!colMap.style && !colMap.design) {
     throw new Error(
@@ -210,6 +217,26 @@ function detectColumns(headers: string[], sourceLabel: string): ColumnMap {
   return colMap as ColumnMap;
 }
 
+/**
+ * Whether an Item Description belongs to the Gown business the KK/R-Studio
+ * brand split covers — anything else (SAMPLE, DUPATTA, PENT, FABRIC UNSTICHED
+ * SAARI, blanks, ...) goes in the "Other / Non-Gown" bucket instead, since a
+ * numeric style number alone can't tell those apart from a real Gown SKU in
+ * the same numeric range. No Item Description column at all (old-sheet
+ * shape) defaults to true — there's no signal to say otherwise, and every
+ * row in that shape *was* Gown-family in practice.
+ *
+ * Rule, confirmed as a reasonable default (not yet tested against real
+ * non-Gown rows — the two live Oracle tabs only ever contain "GOWN"/"KK
+ * GOWN"): contains the word "gown", case-insensitive. So "GOWN SHIRT",
+ * "BELT GOWN", "GOWN SKIRT" etc. count as Gown-family; revisit this if that
+ * turns out too broad or too narrow once Sheet5's real category mix is in.
+ */
+export function isGownFamily(itemDesc: string | undefined): boolean {
+  if (itemDesc === undefined) return true;
+  return /gown/i.test(itemDesc);
+}
+
 interface ParsedRow {
   cust: string;
   sc: string;
@@ -217,15 +244,17 @@ interface ParsedRow {
   qty: number;
   price: number;
   date: string;
+  gown: boolean;
 }
 
-/** One row → the five fields every aggregation below needs, using whichever
+/** One row → the six fields every aggregation below needs, using whichever
  *  column shape detectColumns() found (dedicated columns or Design-derived). */
 function extractRow(colMap: ColumnMap, r: SheetRow): ParsedRow {
   const qty   = parseQty(r[colMap.qty]);
   const price = parsePrice(r[colMap.price]);
   const cust  = (r[colMap.cust] || "Unknown").trim() || "Unknown";
   const date  = (r[colMap.date] || "").trim();
+  const gown  = isGownFamily(colMap.itemDesc ? r[colMap.itemDesc] : undefined);
 
   let sc: string, sn: string;
   if (colMap.style) {
@@ -238,7 +267,7 @@ function extractRow(colMap: ColumnMap, r: SheetRow): ParsedRow {
     sc = parsed?.subcut || "Unknown";
   }
 
-  return { cust, sc, sn, qty, price, date };
+  return { cust, sc, sn, qty, price, date, gown };
 }
 
 // ─── MAIN PROCESSOR ─────────────────────────────────────────────────────────
@@ -345,7 +374,7 @@ export function process(rows: SheetRow[], returnRows: SheetRow[] = []): Dashboar
   const returns: RawRow[] = [];
   if (returnsColMap) {
     for (const r of returnRows) {
-      const { cust, sc, sn, qty, price, date } = extractRow(returnsColMap, r);
+      const { cust, sc, sn, qty, price, date, gown } = extractRow(returnsColMap, r);
       const rev = qty * price;
       totalQty -= qty;
       totalRev -= rev;
@@ -365,7 +394,7 @@ export function process(rows: SheetRow[], returnRows: SheetRow[] = []): Dashboar
       const dt = parseDate(date);
       returns.push({
         c: cust, sc, sn, q: qty, p: Math.trunc(price),
-        d: date, dt: dt ? isoDate(dt) : null,
+        d: date, dt: dt ? isoDate(dt) : null, g: gown,
       });
     }
   }
@@ -600,7 +629,7 @@ export function process(rows: SheetRow[], returnRows: SheetRow[] = []): Dashboar
 
   // ── Raw rows (compact, for date filtering on client) ────────────────────
   const raw: RawRow[] = rows.map((r) => {
-    const { cust, sc, sn, qty, price, date } = extractRow(colMap, r);
+    const { cust, sc, sn, qty, price, date, gown } = extractRow(colMap, r);
     const dt = parseDate(date);
     return {
       c: cust, sc, sn,
@@ -608,6 +637,7 @@ export function process(rows: SheetRow[], returnRows: SheetRow[] = []): Dashboar
       p: Math.trunc(price),
       d: date,
       dt: dt ? isoDate(dt) : null,
+      g: gown,
     };
   });
 

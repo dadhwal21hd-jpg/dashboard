@@ -147,6 +147,15 @@ deliberately **not** redacted by `LOCK_MODE` — see the note in the stylesheet.
 Every failure path degrades to "no thumbnail", never to an error: a broken
 mapping sheet or unshared folder must not take the dashboard down.
 
+**One occasional failure is expected and self-heals**: a "Could not load this
+design" in the lightbox that clears up if you just try again — a one-off
+Drive/network blip, not a broken image (checked directly: the file in
+question loaded fine seconds later, both fast and authenticated paths, no
+sharing issue). `dzFail()` auto-retries once (800ms, cache-busted) before
+showing the error state, which now also has a manual Retry button. If the
+*same* style fails repeatedly rather than once, that's a real sharing
+problem, not this.
+
 **Performance / scalability, two fixes worth knowing about if this regresses:**
 
 1. `fetchImageBytes()` in [src/lib/drive.ts](src/lib/drive.ts) tries Google's
@@ -171,13 +180,34 @@ Measured effect of both together: a burst of 60 concurrent thumbnail
 requests went from ~8s wall time with 3 failures (Drive quota/backoff under
 load) to ~2.7s with 0 failures on the same infrastructure.
 
-## Brand split (KK vs R-Studio)
+## Brand split (KK vs R-Studio vs Other/Non-Gown)
 
-A business rule, not a sheet column — `brandOf(sn)` classifies a style number:
+A business rule, not a sheet column. Two layers, checked in order:
 
-- style number **< 50,000** → **KK**
-- style number **≥ 50,000**, or an **`NR-xxx`** / **`CH-xxx`**-coded style → **R-Studio**
-- anything else (doesn't parse as a plain number, isn't `NR-` or `CH-`) → **Unclassified**
+1. **Gown-family or not**, from Oracle's `Item Description` (`isGownFamily()`
+   in [src/lib/processor.ts](src/lib/processor.ts), stored server-side as
+   `RawRow.g`) — anything not containing "gown" (SAMPLE, DUPATTA, PENT,
+   FABRIC UNSTICHED SAARI, blanks, …) is **Other / Non-Gown**, full stop,
+   regardless of its style number. This exists because a numeric style number
+   alone can't tell a non-Gown item apart from a real Gown SKU sharing the
+   same numeric range — confirmed with a synthetic case: a DUPATTA row with
+   style number 56809 (≥50,000) would have been silently miscounted as
+   R-Studio without this check. Not yet exercised by real data — the two live
+   Oracle tabs are 100% Gown-family — but the classification is real and
+   tested (see `isGownFamily()`'s own tests), not speculative. Sheet with no
+   `Item Description` column at all (old shape) defaults every row to
+   Gown-family, matching prior behaviour exactly.
+2. **For Gown-family rows only**, `brandOf(sn)` classifies the style number:
+   - style number **< 50,000** → **KK**
+   - style number **≥ 50,000**, or an **`NR-xxx`** / **`CH-xxx`**-coded style → **R-Studio**
+   - anything else (doesn't parse as a plain number, isn't `NR-` or `CH-`) → **Unclassified**
+
+**Use `rowBrand(r)` (has a raw row) or `styleBrand(sn)` (has only a style
+number) — not `brandOf(sn)` directly** — anywhere real data is being
+classified; `brandOf()` alone skips the Gown-family check. `styleBrand()` is
+backed by a `sn → Gown-family` lookup built once from `D.raw` (not
+`FILTERED_RAW` — a style's category doesn't change with the date/brand/qty
+filter), same lazy-cache pattern as `globalStyleMap()`.
 
 (Corrected twice in review: `NR-xxx` was first thought to be KK, then it and
 `CH-xxx` were confirmed to both be R-Studio — the numeric-only rule was right

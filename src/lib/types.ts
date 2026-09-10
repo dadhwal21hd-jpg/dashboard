@@ -71,6 +71,10 @@ export interface RawRow {
   p: number;
   d: string;
   dt: string | null;
+  /** Gown-family (the KK/R-Studio brand split applies) vs everything else
+   *  ("Other / Non-Gown" bucket) — see isGownFamily() in processor.ts.
+   *  Always true for sheets with no Item Description column (old shape). */
+  g: boolean;
 }
 
 export interface DashboardData {

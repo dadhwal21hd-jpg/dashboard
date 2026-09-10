@@ -821,10 +821,11 @@ body.customer-mode tr.cust-revealed::before{
   <div style="width:1px;height:20px;background:var(--border);margin:0 4px"></div>
 
   <span class="filter-label">🏷️ Brand:</span>
-  <select id="brand-filter" onchange="applyGlobalFilter()" title="Split by style number: under 50,000 = KK · 50,000+ or NR-xxx/CH-xxx = R-Studio">
+  <select id="brand-filter" onchange="applyGlobalFilter()" title="Under 50,000 = KK · 50,000+ or NR-xxx/CH-xxx = R-Studio · non-Gown items (Item Description) = Other">
     <option value="all">All Brands</option>
     <option value="kk">KK</option>
     <option value="rstudio">R-Studio</option>
+    <option value="other">Other / Non-Gown</option>
     <option value="unknown">Unclassified</option>
   </select>
 
@@ -1561,6 +1562,7 @@ function buildAnalytics(rows) {
 
 // ══════════════════════════════════════════════════════════════
 // BRAND SPLIT (business rule, not derived from any sheet column)
+//   Not Gown-family (Item Description doesn't contain "gown") → other
 //   style number < 50,000                              → KK
 //   style number ≥ 50,000, or "NR-xxx"/"CH-xxx" coded   → R-Studio
 //   anything else (doesn't parse as a plain number, isn't
@@ -1569,9 +1571,18 @@ function buildAnalytics(rows) {
 //   written, so this rule was inert in the live data at the
 //   time — a safety net for future orders, not a tested-against
 //   live category. If more prefixes turn up, add them here.
+//
+// The "other" check runs first and needs the row's D.raw.g flag (set
+// server-side from Item Description, see isGownFamily() in processor.ts) —
+// brandOf(sn) alone can't tell a non-Gown item apart from a real Gown SKU
+// that happens to share its numeric range, so anything iterating actual rows
+// must use rowBrand(r)/styleBrand(sn) below, not brandOf() directly, once
+// non-Gown rows exist (Sheet5 — not live in the current two Oracle tabs,
+// which are 100% Gown-family, so this is a real classification but not
+// something visibly exercised yet).
 // ══════════════════════════════════════════════════════════════
-const BRAND_LABEL = { kk: 'KK', rstudio: 'R-Studio', unknown: 'Unclassified' };
-const BRAND_BADGE_CLASS = { kk: 'bg', rstudio: 'bb', unknown: 'br' };
+const BRAND_LABEL = { kk: 'KK', rstudio: 'R-Studio', other: 'Other / Non-Gown', unknown: 'Unclassified' };
+const BRAND_BADGE_CLASS = { kk: 'bg', rstudio: 'bb', other: 'bc', unknown: 'br' };
 
 function brandOf(sn) {
   const s = String(sn || '').trim();
@@ -1581,9 +1592,37 @@ function brandOf(sn) {
   return 'unknown';
 }
 
+/** Brand for one raw row — checks Gown-family first (r.g, server-computed
+ *  from Item Description), falling through to the numeric/prefix rule above
+ *  only for Gown-family rows. Use this (not brandOf()) wherever an actual
+ *  row is in hand. */
+function rowBrand(r) {
+  if (r && r.g === false) return 'other';
+  return brandOf(r && r.sn);
+}
+
+// sn -> Gown-family, built once from the full (unfiltered) history — a style
+// number's category doesn't change with the date/qty/price/brand filter, so
+// this is safe to cache indefinitely, same pattern as globalStyleMap().
+let _STYLE_GOWN = null;
+function styleIsGownFamily(sn) {
+  if (!_STYLE_GOWN) {
+    _STYLE_GOWN = {};
+    for (const r of D.raw) if (r.sn && !(r.sn in _STYLE_GOWN)) _STYLE_GOWN[r.sn] = r.g !== false;
+  }
+  return _STYLE_GOWN[sn] !== false;
+}
+
+/** Brand for a style number on its own (no row in hand) — e.g. table rows
+ *  that only ever had `s.n`, not the underlying raw row. */
+function styleBrand(sn) {
+  if (!styleIsGownFamily(sn)) return 'other';
+  return brandOf(sn);
+}
+
 function brandBadge(sn) {
-  const b = brandOf(sn);
-  return `<span class="badge ${BRAND_BADGE_CLASS[b]}" style="font-size:9px" title="Brand split: style < 50,000 = KK · ≥ 50,000 or NR-xxx/CH-xxx = R-Studio">${BRAND_LABEL[b]}</span>`;
+  const b = styleBrand(sn);
+  return `<span class="badge ${BRAND_BADGE_CLASS[b]}" style="font-size:9px" title="Brand split: style < 50,000 = KK · ≥ 50,000 or NR-xxx/CH-xxx = R-Studio · non-Gown items = Other">${BRAND_LABEL[b]}</span>`;
 }
 
 /** True when any control in the global filter bar would narrow the data —
@@ -1613,7 +1652,7 @@ function passesGlobalFilter(r) {
   }
   if (r.q < FILTER_MIN_QTY || r.q > FILTER_MAX_QTY) return false;
   if (r.p && (r.p < FILTER_MIN_PRICE || r.p > FILTER_MAX_PRICE)) return false;
-  if (BRAND_FILTER !== 'all' && brandOf(r.sn) !== BRAND_FILTER) return false;
+  if (BRAND_FILTER !== 'all' && rowBrand(r) !== BRAND_FILTER) return false;
   return true;
 }
 
@@ -2396,7 +2435,7 @@ function daysBetween(isoA, isoB) {
 }
 
 function reorderRadarRows(minOrders) {
-  const rows = BRAND_FILTER === 'all' ? D.raw : D.raw.filter(r => brandOf(r.sn) === BRAND_FILTER);
+  const rows = BRAND_FILTER === 'all' ? D.raw : D.raw.filter(r => rowBrand(r) === BRAND_FILTER);
   const custDates = {}, custQty = {};
   for (const r of rows) {
     if (!r.c || !r.dt) continue;
@@ -2997,19 +3036,16 @@ function designThumb(sn, size){
 // ── Lightbox ──────────────────────────────────────────────────
 let _dzFiles = [], _dzIdx = 0, _dzStyle = '';
 
+let _dzRetries = 0; // auto-retries used for the design currently open in the lightbox
+
 function openDesign(sn){
   if (!hasDesign(sn)) return;
-  _dzStyle = String(sn); _dzFiles = []; _dzIdx = 0;
+  _dzStyle = String(sn); _dzFiles = []; _dzIdx = 0; _dzRetries = 0;
   document.getElementById('dz-title').textContent = '#' + _dzStyle;
   document.getElementById('dz-sub').textContent = '';
   document.getElementById('dz-file').textContent = '';
   document.getElementById('dz').classList.add('open');
-
-  // Nearly every style has exactly one image, so show it straight away rather
-  // than waiting on a listing round-trip.
-  document.getElementById('dz-stage').innerHTML =
-    `<img src="${designURL({style: _dzStyle, sz: 'w1200'})}" alt="Design ${esc(_dzStyle)}"
-          onerror="dzFail()">`;
+  dzLoadMain();
 
   // Then ask what else is in there; arrows appear only if there's more.
   fetch(designURL({style: _dzStyle, list: '1'}))
@@ -3018,10 +3054,33 @@ function openDesign(sn){
     .catch(() => {});
 }
 
+/** Nearly every style has exactly one image, so show it straight away rather
+ *  than waiting on a listing round-trip. A cache-busting param on retry, since
+ *  a failed image load can otherwise be served from the browser's own cache
+ *  again instead of actually re-hitting the server. */
+function dzLoadMain(){
+  const bust = _dzRetries > 0 ? { r: String(Date.now()) } : {};
+  document.getElementById('dz-stage').innerHTML =
+    `<img src="${designURL({style: _dzStyle, sz: 'w1200', ...bust})}" alt="Design ${esc(_dzStyle)}"
+          onerror="dzFail()">`;
+}
+
+/** Most failures seen in practice are a one-off blip (a burst of concurrent
+ *  loads, a momentary network hiccup) that clears up a moment later — so try
+ *  again once automatically before bothering the user with an error state. */
 function dzFail(){
+  if (_dzRetries < 1) {
+    _dzRetries++;
+    setTimeout(dzLoadMain, 800);
+    return;
+  }
   document.getElementById('dz-sub').textContent = '';
   document.getElementById('dz-stage').innerHTML =
-    '<div style="color:var(--text3);font-size:12px;text-align:center;padding:24px">Could not load this design.<br><span style="font-size:10px">Check the image is shared with the service account.</span></div>';
+    `<div style="color:var(--text3);font-size:12px;text-align:center;padding:24px">
+       Could not load this design.<br>
+       <span style="font-size:10px">If this keeps happening for this specific style, check the image is shared with the service account.</span><br>
+       <button class="btn btn-outline btn-sm" style="margin-top:10px" onclick="openDesign('${esc(_dzStyle).replace(/'/g,"\\'")}')">↻ Retry</button>
+     </div>`;
 }
 
 function dzDraw(){
