@@ -180,6 +180,29 @@ Measured effect of both together: a burst of 60 concurrent thumbnail
 requests went from ~8s wall time with 3 failures (Drive quota/backoff under
 load) to ~2.7s with 0 failures on the same infrastructure.
 
+**A third, later fix (Sep 2026): thumbnails were still slow on repeat views**
+— single loads measured 0.7–2.8s live even after the above, and a *repeat*
+request for the exact same image was still ~300–600ms, never near-instant.
+Root cause: `/api/dashboard` minted a brand-new `mintDesignToken()` on every
+single page load, and every design-image URL embeds that token
+(`&t=...`) — so every reload produced entirely different image URLs, and the
+browser's own HTTP cache (`Cache-Control` on `/api/design`'s responses) never
+got a chance to be reused, no matter how aggressive its `max-age` was, because
+the URL was never the same twice. Fixed with `getStableDesignToken()` in
+[src/lib/signing.ts](src/lib/signing.ts) — the same token is now reused for
+6 hours (`unstable_cache`, same pattern as `fetchDesignMap()`), safely under
+the token's own 12h validity. `/api/design`'s `Cache-Control` max-age was
+aligned to that same 6h window with `immutable` added, since a URL that
+actually stays stable for 6h genuinely never changes what it returns in that
+window. **Not yet fixed, left as a known limitation**: `bytesCache`/
+`listCache` in [src/lib/drive.ts](src/lib/drive.ts) are still plain
+per-lambda-instance `Map`s, not a shared cache — a cold instance still pays
+the full Drive-fetch cost once, same as `fetchDesignMap()` did before it was
+moved to `unstable_cache`. Worth the same treatment if repeat-load latency is
+still a problem after the token fix lands; deferred because `unstable_cache`
+is built for JSON-serializable values and image bytes would need base64
+encoding first — untested trade-off, not attempted speculatively.
+
 ## Brand split (KK vs R-Studio vs Other/Non-Gown)
 
 **Authoritative classification is server-side and Item-Description-first**:

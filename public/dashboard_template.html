@@ -801,6 +801,8 @@ body.customer-mode tr.cust-revealed::before{
   <div style="width:1px;height:20px;background:var(--border);margin:0 4px"></div>
 
   <button class="btn btn-outline btn-sm" onclick="setQuick('all')">All Time</button>
+  <button class="btn btn-outline btn-sm" onclick="setQuick('2022')">2022</button>
+  <button class="btn btn-outline btn-sm" onclick="setQuick('2023')">2023</button>
   <button class="btn btn-outline btn-sm" onclick="setQuick('2024')">2024</button>
   <button class="btn btn-outline btn-sm" onclick="setQuick('2025')">2025</button>
   <button class="btn btn-outline btn-sm" onclick="setQuick('2026')">2026</button>
@@ -1671,9 +1673,7 @@ function applyDateFilter() { applyGlobalFilter(); } // backwards compat
 function setQuick(period) {
   const fd=document.getElementById('date-from'), td=document.getElementById('date-to');
   if (period==='all')   { fd.value=''; td.value=''; }
-  else if(period==='2024') { fd.value='2024-01-01'; td.value='2024-12-31'; }
-  else if(period==='2025') { fd.value='2025-01-01'; td.value='2025-12-31'; }
-  else if(period==='2026') { fd.value='2026-01-01'; td.value='2026-12-31'; }
+  else if(/^\d{4}$/.test(period)) { fd.value=`${period}-01-01`; td.value=`${period}-12-31`; }
   else if(period==='last6') { const d=new Date(); d.setMonth(d.getMonth()-6); fd.value=d.toISOString().slice(0,10); td.value=new Date().toISOString().slice(0,10); }
   else if(period==='last3') { const d=new Date(); d.setMonth(d.getMonth()-3); fd.value=d.toISOString().slice(0,10); td.value=new Date().toISOString().slice(0,10); }
   applyGlobalFilter();
@@ -2043,7 +2043,6 @@ function styleBuyersHTML(sn) {
       <td style="text-align:center">${freqBadge(b.orders)}</td>
       <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text2)">${b.rev>0?fmt(b.rev):'—'}</td>
       <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);white-space:nowrap">${span}</td>
-      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text3)" title="This customer's total units across all styles">${fN(custQty[b.name] || b.qty)}</td>
       <td style="text-align:right"><span class="sn-verdict sn-v-${v.k}" title="${v.t}">${v.l}</span></td>
     </tr>`;
   }).join('');
@@ -2068,7 +2067,6 @@ function styleBuyersHTML(sn) {
         <th style="text-align:center">Orders</th>
         <th style="text-align:right">Revenue</th>
         <th style="text-align:right">Order Window</th>
-        <th style="text-align:right">Their Total</th>
         <th style="text-align:right">Verdict</th>
       </tr></thead>
       <tbody>${rows}</tbody>

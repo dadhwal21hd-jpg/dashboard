@@ -12,6 +12,7 @@
  * exposed than the payload it ships inside.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { unstable_cache } from "next/cache";
 
 const DEFAULT_TTL_MS = 12 * 60 * 60 * 1000; // outlives a working day of one page
 
@@ -31,6 +32,24 @@ export function mintDesignToken(sub: string, ttlMs = DEFAULT_TTL_MS): string {
   const payload = `${exp}.${sub}`;
   return `${Buffer.from(payload).toString("base64url")}.${sign(payload)}`;
 }
+
+/**
+ * Same token, reused across page loads for up to 6 hours (well under the
+ * 12h token TTL, so it's never handed out already-expired).
+ *
+ * Why this exists: /api/dashboard used to call mintDesignToken() fresh on
+ * every request. Design-image URLs embed this token (`&t=...`), so a fresh
+ * token on every page load meant every image URL changed on every reload —
+ * the browser's own HTTP cache (Cache-Control on /api/design responses) had
+ * no chance to ever be reused, because the URL was never the same twice.
+ * Caching the token itself, not just the image bytes, is what makes "I saw
+ * this thumbnail an hour ago" actually skip the network the second time.
+ */
+export const getStableDesignToken = unstable_cache(
+  async (sub: string) => mintDesignToken(sub),
+  ["design-token"],
+  { revalidate: 6 * 60 * 60, tags: ["design-token"] },
+);
 
 /** True when the token is well-formed, unexpired and correctly signed. */
 export function verifyDesignToken(token: string | null): boolean {

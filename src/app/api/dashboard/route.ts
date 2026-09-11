@@ -21,7 +21,7 @@ import { authOptions } from "@/lib/auth";
 import { fetchSheetRows, fetchReturnsRows } from "@/lib/sheets";
 import { process as runProcessor } from "@/lib/processor";
 import { fetchDesignMap, designsConfigured } from "@/lib/designs";
-import { mintDesignToken } from "@/lib/signing";
+import { getStableDesignToken } from "@/lib/signing";
 
 export const dynamic = "force-dynamic"; // never statically cache this route
 
@@ -74,7 +74,7 @@ export async function GET(req: NextRequest) {
       // image route from inside the opaque-origin iframe.
       _designs:       designStyles,
       _design_base:   designsConfigured() ? `${origin}/api/design` : "",
-      _design_token:  designsConfigured() ? mintDesignToken(session.user.email) : "",
+      _design_token:  designsConfigured() ? await getStableDesignToken(session.user.email) : "",
     };
 
     const injected = template.replace(
