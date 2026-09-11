@@ -316,20 +316,26 @@ compresses to ~310KB (brotli) — no scaling concern at this size. The earlier
 `DASH` history surfaced the numeric-threshold rule's real error rate, which a
 ~2-month window couldn't have shown.
 
-**Known, not yet resolved**: ~3,770 rows (4.7%) have a non-numeric suffix
+**Resolved with the user**: ~3,770 rows (4.7%) have a non-numeric suffix
 after the `Design` field's dot — e.g. `G-SG.16944C` (style `16944` + variant
-`C`), `G-SG.53211[CH224]`. `parseDesign()` currently keeps these verbatim as
-the style number (so `sn` becomes `"16944C"` rather than `"16944"`), which
-doesn't affect brand (Item Description settles that regardless) but does
-affect **style-level grouping** — the Style Numbers tab and design-thumbnail
-lookup would treat `16944` and `16944C` as different styles, and a design
-image keyed by the bare numeric code wouldn't match the suffixed rows. Not
-fixed because it's a real judgement call, not a parsing bug: are these
-distinct product variants (colourways) that *should* stay separate, or
-formatting noise that should collapse into the base style number? Ask before
-changing `parseDesign()`'s behaviour here — collapsing them wrong would
-under-count real product variety; leaving them wrong under-counts a style's
-true sales by splitting them across suffixed variants.
+`C`), `G-SG.53211[CH224]`. Confirmed: these are **genuinely separate items**
+(colourway variants), not formatting noise — `parseDesign()` correctly keeps
+them verbatim as distinct style numbers (`"16944C"`, not collapsed to
+`"16944"`); no parsing change was needed.
+
+That confirmation did surface a real, separate gap worth fixing: the design
+catalogues almost never photograph a colourway variant under its own suffixed
+code. Measured against the full sales history: of 1,131 distinct suffixed
+styles, only **6** have an exact photo, but **55** more have their *base*
+style (e.g. `56078` for `56078[CH284]`) photographed — a different colourway
+of the same garment. `resolveDesignStyle(sn)` in the template (used by
+`hasDesign()`, `designThumb()`, `openDesign()`) now falls back to the base
+style's photo when the exact variant has none, and marks it clearly as
+approximate — a dashed thumbnail border, a "~" badge, and (in the lightbox) a
+subtitle naming the base style shown. Never silently presents an approximate
+photo as if it were the exact one. Purely client-side (`D._designs` already
+contains the base codes; no server/processor.ts change needed) — the fallback
+just tries the numeric prefix of an unmatched style before giving up.
 
 `Sheet5`'s original, messier shape (20+ `Item Description` categories,
 `Design` formats with no dot, alphanumeric suffixes) is what `DASH` was

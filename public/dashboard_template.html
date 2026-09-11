@@ -149,6 +149,9 @@ select:focus,input:focus{outline:none;border-color:var(--accent);}
 .dt-n{position:absolute;right:1px;bottom:1px;background:rgba(0,0,0,.6);color:#fff;font-family:'IBM Plex Mono',monospace;font-size:8px;padding:0 3px;border-radius:2px;}
 .dt-sm{width:34px;height:44px;}
 .dt-md{width:52px;height:66px;}
+/* Base-style fallback (no photo of this exact colourway) — dashed border on
+   .dt itself (set inline per-instance, see designThumb()) plus this "~" badge. */
+.dt-approx{position:absolute;left:1px;top:1px;background:var(--accent);color:#fff;font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:700;width:12px;height:12px;line-height:12px;text-align:center;border-radius:50%;}
 
 /* NOTE: designs are NOT redacted in locked mode. The lock hides *who buys what
    and for how much*; a style's own design image identifies no customer. To
@@ -2986,10 +2989,31 @@ function designsOn(){ return !!(D && D._design_base && D._design_token); }
 // D._designs is the list of style numbers that have an image; Drive IDs stay
 // server-side. Built into a Set once — this is checked per table row.
 let _DESIGN_SET = null;
-function hasDesign(sn){
-  if (!designsOn()) return false;
+
+/**
+ * Resolves a style to a design, exact or approximate. A style like "16944C"
+ * (a confirmed-real colourway variant — see CLAUDE.md's Brand-split section
+ * for the history of why suffixed styles are trusted as genuinely distinct
+ * products, not noise) usually isn't itself photographed — the catalogue
+ * only shoots one colourway per base number. Measured: of 1,131 distinct
+ * suffixed styles in the full sales history, only 6 have an exact photo, but
+ * 55 more have their base style (e.g. "16944" for "16944C") photographed —
+ * a different colourway of the same garment, not the exact one, but far more
+ * useful than a blank placeholder. Falling back to it, clearly labelled as
+ * approximate so it's never mistaken for the real thing.
+ */
+function resolveDesignStyle(sn){
+  if (!designsOn()) return null;
   if (!_DESIGN_SET) _DESIGN_SET = new Set((D._designs || []).map(String));
-  return _DESIGN_SET.has(String(sn));
+  const s = String(sn);
+  if (_DESIGN_SET.has(s)) return { style: s, exact: true };
+  const base = s.match(/^\d+/)?.[0];
+  if (base && base !== s && _DESIGN_SET.has(base)) return { style: base, exact: false };
+  return null;
+}
+
+function hasDesign(sn){
+  return !!resolveDesignStyle(sn);
 }
 
 function designURL(params){
@@ -2998,32 +3022,46 @@ function designURL(params){
 }
 
 /** Thumbnail cell. `size` is 'sm' | 'md'. Renders a placeholder when the
- *  style has no folder, so table columns stay aligned. */
+ *  style has no folder (exact or base-fallback), so table columns stay
+ *  aligned. An approximate (base-style) match gets a dashed border and a
+ *  tooltip saying so — never presented as if it were the exact photo. */
 function designThumb(sn, size){
   const cls = size === 'md' ? 'dt-md' : 'dt-sm';
   if (!designsOn()) return '';   // feature off entirely — don't leave gaps in the layout
-  if (!hasDesign(sn)) {
+  const resolved = resolveDesignStyle(sn);
+  if (!resolved) {
     return `<span class="dt ${cls} dt-empty" title="No design folder mapped for #${esc(sn)}"><span class="dt-ph">—</span></span>`;
   }
-  const src = designURL({style: sn, sz: size === 'md' ? 'w220' : 'w160'});
-  return `<span class="dt ${cls}" onclick="event.stopPropagation();openDesign('${esc(String(sn)).replace(/'/g,"\\'")}')" title="Design for #${esc(sn)} — click to enlarge">
+  const src = designURL({style: resolved.style, sz: size === 'md' ? 'w220' : 'w160'});
+  const approxStyle = resolved.exact ? '' : 'border-style:dashed;';
+  const title = resolved.exact
+    ? `Design for #${esc(sn)} — click to enlarge`
+    : `No photo for this exact colourway (#${esc(sn)}) — showing base style #${esc(resolved.style)} instead. Click to enlarge.`;
+  return `<span class="dt ${cls}" style="${approxStyle}" onclick="event.stopPropagation();openDesign('${esc(String(sn)).replace(/'/g,"\\'")}')" title="${title}">
     <span class="dt-ph">◌</span>
     <img loading="lazy" src="${src}" alt="Design ${esc(sn)}"
          onload="this.classList.add('loaded')"
          onerror="this.closest('.dt').classList.add('dt-empty');this.remove()">
+    ${resolved.exact ? '' : '<span class="dt-approx" title="Approximate — base style, not this exact colourway">~</span>'}
   </span>`;
 }
 
 // ── Lightbox ──────────────────────────────────────────────────
-let _dzFiles = [], _dzIdx = 0, _dzStyle = '';
+let _dzFiles = [], _dzIdx = 0, _dzStyle = '', _dzRequested = '';
 
 let _dzRetries = 0; // auto-retries used for the design currently open in the lightbox
 
 function openDesign(sn){
-  if (!hasDesign(sn)) return;
-  _dzStyle = String(sn); _dzFiles = []; _dzIdx = 0; _dzRetries = 0;
-  document.getElementById('dz-title').textContent = '#' + _dzStyle;
-  document.getElementById('dz-sub').textContent = '';
+  const resolved = resolveDesignStyle(sn);
+  if (!resolved) return;
+  // _dzStyle is what we actually FETCH (the resolved/base style when this is
+  // an approximate match); the requested style is only used for the title so
+  // the approximation is visible without ever fetching the wrong image.
+  _dzRequested = String(sn);
+  _dzStyle = resolved.style; _dzFiles = []; _dzIdx = 0; _dzRetries = 0;
+  document.getElementById('dz-title').textContent = '#' + _dzRequested;
+  document.getElementById('dz-sub').textContent = resolved.exact ? '' :
+    `showing base style #${esc(resolved.style)} — no photo of this exact colourway`;
   document.getElementById('dz-file').textContent = '';
   document.getElementById('dz').classList.add('open');
   dzLoadMain();
@@ -3060,7 +3098,7 @@ function dzFail(){
     `<div style="color:var(--text3);font-size:12px;text-align:center;padding:24px">
        Could not load this design.<br>
        <span style="font-size:10px">If this keeps happening for this specific style, check the image is shared with the service account.</span><br>
-       <button class="btn btn-outline btn-sm" style="margin-top:10px" onclick="openDesign('${esc(_dzStyle).replace(/'/g,"\\'")}')">↻ Retry</button>
+       <button class="btn btn-outline btn-sm" style="margin-top:10px" onclick="openDesign('${esc(_dzRequested).replace(/'/g,"\\'")}')">↻ Retry</button>
      </div>`;
 }
 
