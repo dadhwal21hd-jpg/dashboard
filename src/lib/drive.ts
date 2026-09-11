@@ -3,12 +3,15 @@
  *
  * The mapping sheet gives us a *folder*, so every lookup is two steps:
  * list the folder's image files, then fetch bytes for one of them. Both are
- * cached in memory — designs are effectively static, and Drive quota is not.
+ * cached via Next's Data Cache (unstable_cache) — shared cluster-wide, not a
+ * plain module variable — designs are effectively static, and Drive quota is
+ * not.
  *
  * Requires the Drive API enabled on the Cloud project and the design folders
  * shared with the service account (sharing one parent cascades to children).
  */
 import { google } from "googleapis";
+import { unstable_cache, revalidateTag } from "next/cache";
 import { buildDesignsAuth, SCOPE_DRIVE } from "./google";
 
 export interface DriveImage {
@@ -17,13 +20,10 @@ export interface DriveImage {
   mimeType: string;
 }
 
-const LIST_TTL_MS = 30 * 60 * 1000;
-const BYTES_TTL_MS = 60 * 60 * 1000;
-/** Cap the byte cache so a big catalogue can't exhaust the lambda's memory. */
-const BYTES_MAX_ENTRIES = 300;
-
-const listCache = new Map<string, { files: DriveImage[]; at: number }>();
-const bytesCache = new Map<string, { buf: Buffer; type: string; at: number }>();
+const LIST_TAG = "drive-list";
+const BYTES_TAG = "drive-bytes";
+const LIST_REVALIDATE_SECONDS = 30 * 60;
+const BYTES_REVALIDATE_SECONDS = 60 * 60;
 
 function driveClient() {
   return google.drive({ version: "v3", auth: buildDesignsAuth([SCOPE_DRIVE]) });
@@ -31,46 +31,45 @@ function driveClient() {
 
 /**
  * Image files inside a folder, name-sorted so "the first image" is stable
- * across requests. Returns [] on any failure — a missing design must never
- * surface as an error in the dashboard.
+ * across requests. Throws on an actual API failure — never caches a
+ * transient error as if it were "this folder has no images"; see the
+ * comment on cachedFolderImages below for why that distinction matters with
+ * a shared cache. A folder that genuinely has zero images still returns []
+ * normally (that's real data, fine to cache).
  */
+async function computeFolderImages(folderId: string): Promise<DriveImage[]> {
+  const drive = driveClient();
+  const res = await drive.files.list({
+    q: `'${folderId.replace(/'/g, "\\'")}' in parents and mimeType contains 'image/' and trashed = false`,
+    fields: "files(id,name,mimeType)",
+    orderBy: "name_natural",
+    pageSize: 50,
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
+  });
+  return (res.data.files ?? []).map((f) => ({
+    id: f.id!,
+    name: f.name ?? "",
+    mimeType: f.mimeType ?? "image/jpeg",
+  })).filter((f) => f.id);
+}
+
+const cachedFolderImages = unstable_cache(computeFolderImages, [LIST_TAG], {
+  revalidate: LIST_REVALIDATE_SECONDS,
+  tags: [LIST_TAG],
+});
+
+/** Returns [] on any failure — a missing design must never surface as an
+ *  error in the dashboard. A genuine failure (vs. a real empty folder) is
+ *  never cached — see computeFolderImages. */
 export async function listFolderImages(folderId: string): Promise<DriveImage[]> {
-  const hit = listCache.get(folderId);
-  if (hit && Date.now() - hit.at < LIST_TTL_MS) return hit.files;
-
   try {
-    const drive = driveClient();
-    const res = await drive.files.list({
-      q: `'${folderId.replace(/'/g, "\\'")}' in parents and mimeType contains 'image/' and trashed = false`,
-      fields: "files(id,name,mimeType)",
-      orderBy: "name_natural",
-      pageSize: 50,
-      supportsAllDrives: true,
-      includeItemsFromAllDrives: true,
-    });
-    const files: DriveImage[] = (res.data.files ?? []).map((f) => ({
-      id: f.id!,
-      name: f.name ?? "",
-      mimeType: f.mimeType ?? "image/jpeg",
-    })).filter((f) => f.id);
-
-    listCache.set(folderId, { files, at: Date.now() });
-    return files;
+    return await cachedFolderImages(folderId);
   } catch (err) {
     console.error(`Drive list failed for folder ${folderId}:`,
       err instanceof Error ? err.message : err);
-    listCache.set(folderId, { files: [], at: Date.now() });
     return [];
   }
-}
-
-function rememberBytes(key: string, buf: Buffer, type: string) {
-  if (bytesCache.size >= BYTES_MAX_ENTRIES) {
-    // Cheap eviction: drop the oldest inserted key (Map preserves insertion order).
-    const oldest = bytesCache.keys().next().value;
-    if (oldest) bytesCache.delete(oldest);
-  }
-  bytesCache.set(key, { buf, type, at: Date.now() });
 }
 
 /**
@@ -107,61 +106,82 @@ async function fetchPublicThumbnail(
   }
 }
 
+interface CachedImage {
+  /** base64 — unstable_cache needs a JSON-serializable value, not a Buffer. */
+  b64: string;
+  type: string;
+}
+
 /**
- * Bytes for one image.
- *
- * `size` is a Drive thumbnail spec such as "w400". Tries the public endpoint
- * first (see fetchPublicThumbnail); only files that turn out not to be
- * publicly shared fall through to the authenticated Drive API path below.
+ * The actual fetch, tried public-first then authenticated (see
+ * fetchPublicThumbnail). THROWS when neither path produces an image — this
+ * is deliberate, not a bug: the result is cached cluster-wide for
+ * BYTES_REVALIDATE_SECONDS (see cachedImageBytes below), and a module-level
+ * cache used to mean a transient failure only cost one lambda instance one
+ * miss. A shared cache makes that failure durable and global instead unless
+ * we refuse to cache it — same fix already applied to fetchDesignMap() in
+ * designs.ts after that exact bug shipped once. Throwing here means
+ * unstable_cache never calls its cacheNewResult, so nothing gets persisted;
+ * the outer fetchImageBytes() catches this and returns null for just this
+ * one request instead.
+ */
+async function computeImageBytes(fileId: string, size: string): Promise<CachedImage> {
+  const pub = await fetchPublicThumbnail(fileId, size);
+  if (pub) return { b64: pub.buf.toString("base64"), type: pub.type };
+
+  const drive = driveClient();
+  const meta = await drive.files.get({
+    fileId,
+    fields: "thumbnailLink,mimeType",
+    supportsAllDrives: true,
+  });
+
+  const thumb = meta.data.thumbnailLink;
+  if (thumb) {
+    // thumbnailLink carries its own signature but still wants the bearer
+    // token; the trailing =sNNN is swapped for the size we actually want.
+    const url = thumb.replace(/=s\d+(-c)?$/, `=${size}`);
+    const token = await buildDesignsAuth([SCOPE_DRIVE]).getAccessToken();
+    const res = await fetch(url, {
+      headers: token?.token ? { Authorization: `Bearer ${token.token}` } : undefined,
+    });
+    if (res.ok) {
+      const buf = Buffer.from(await res.arrayBuffer());
+      const type = res.headers.get("content-type") || "image/jpeg";
+      return { b64: buf.toString("base64"), type };
+    }
+  }
+
+  // No thumbnail — pull the original file.
+  const full = await drive.files.get(
+    { fileId, alt: "media", supportsAllDrives: true },
+    { responseType: "arraybuffer" },
+  );
+  const buf = Buffer.from(full.data as ArrayBuffer);
+  const type = meta.data.mimeType || "image/jpeg";
+  return { b64: buf.toString("base64"), type };
+}
+
+const cachedImageBytes = unstable_cache(computeImageBytes, [BYTES_TAG], {
+  revalidate: BYTES_REVALIDATE_SECONDS,
+  tags: [BYTES_TAG],
+});
+
+/**
+ * Bytes for one image, shared cluster-wide — a cold Vercel instance no
+ * longer re-pays the Drive/network round trip for an image another instance
+ * already fetched moments ago, which a plain per-instance Map (the previous
+ * design) couldn't help with. `size` is a Drive thumbnail spec such as
+ * "w400". Returns null on any failure (missing file, both fetch paths down)
+ * rather than throwing — a broken image must never take the dashboard down.
  */
 export async function fetchImageBytes(
   fileId: string,
   size = "w400",
 ): Promise<{ buf: Buffer; type: string } | null> {
-  const key = `${fileId}@${size}`;
-  const hit = bytesCache.get(key);
-  if (hit && Date.now() - hit.at < BYTES_TTL_MS) return { buf: hit.buf, type: hit.type };
-
-  const pub = await fetchPublicThumbnail(fileId, size);
-  if (pub) {
-    rememberBytes(key, pub.buf, pub.type);
-    return pub;
-  }
-
   try {
-    const drive = driveClient();
-    const meta = await drive.files.get({
-      fileId,
-      fields: "thumbnailLink,mimeType",
-      supportsAllDrives: true,
-    });
-
-    const thumb = meta.data.thumbnailLink;
-    if (thumb) {
-      // thumbnailLink carries its own signature but still wants the bearer
-      // token; the trailing =sNNN is swapped for the size we actually want.
-      const url = thumb.replace(/=s\d+(-c)?$/, `=${size}`);
-      const token = await buildDesignsAuth([SCOPE_DRIVE]).getAccessToken();
-      const res = await fetch(url, {
-        headers: token?.token ? { Authorization: `Bearer ${token.token}` } : undefined,
-      });
-      if (res.ok) {
-        const buf = Buffer.from(await res.arrayBuffer());
-        const type = res.headers.get("content-type") || "image/jpeg";
-        rememberBytes(key, buf, type);
-        return { buf, type };
-      }
-    }
-
-    // No thumbnail — pull the original file.
-    const full = await drive.files.get(
-      { fileId, alt: "media", supportsAllDrives: true },
-      { responseType: "arraybuffer" },
-    );
-    const buf = Buffer.from(full.data as ArrayBuffer);
-    const type = meta.data.mimeType || "image/jpeg";
-    rememberBytes(key, buf, type);
-    return { buf, type };
+    const { b64, type } = await cachedImageBytes(fileId, size);
+    return { buf: Buffer.from(b64, "base64"), type };
   } catch (err) {
     console.error(`Drive image fetch failed for ${fileId}:`,
       err instanceof Error ? err.message : err);
@@ -170,6 +190,6 @@ export async function fetchImageBytes(
 }
 
 export function clearDriveCache(): void {
-  listCache.clear();
-  bytesCache.clear();
+  revalidateTag(LIST_TAG, { expire: 0 });
+  revalidateTag(BYTES_TAG, { expire: 0 });
 }

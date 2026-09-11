@@ -194,14 +194,29 @@ the URL was never the same twice. Fixed with `getStableDesignToken()` in
 the token's own 12h validity. `/api/design`'s `Cache-Control` max-age was
 aligned to that same 6h window with `immutable` added, since a URL that
 actually stays stable for 6h genuinely never changes what it returns in that
-window. **Not yet fixed, left as a known limitation**: `bytesCache`/
-`listCache` in [src/lib/drive.ts](src/lib/drive.ts) are still plain
-per-lambda-instance `Map`s, not a shared cache — a cold instance still pays
-the full Drive-fetch cost once, same as `fetchDesignMap()` did before it was
-moved to `unstable_cache`. Worth the same treatment if repeat-load latency is
-still a problem after the token fix lands; deferred because `unstable_cache`
-is built for JSON-serializable values and image bytes would need base64
-encoding first — untested trade-off, not attempted speculatively.
+window.
+
+**Fourth fix, same day**: `bytesCache`/`listCache` in
+[src/lib/drive.ts](src/lib/drive.ts) were still plain per-lambda-instance
+`Map`s at that point — a cold instance still paid the full Drive-fetch cost
+once, same as `fetchDesignMap()` did before *it* was moved to
+`unstable_cache`. Moved both to `unstable_cache` too (`cachedImageBytes` /
+`cachedFolderImages`), same shared-cache pattern, now cluster-wide. Image
+bytes are stored base64-encoded (`unstable_cache` needs a JSON-serializable
+value, not a `Buffer`) and decoded back on the way out — verified this
+round-trips byte-for-byte, not just "doesn't crash". Applied the exact same
+"throw on failure, don't return null" discipline as `fetchDesignMap()`
+(`computeImageBytes`/`computeFolderImages` throw; the exported
+`fetchImageBytes`/`listFolderImages` catch and return `null`/`[]`) for the
+same reason: a shared cache makes a transient failure durable and global
+unless the failure path is kept out of what gets cached.
+
+Verified against a local production build (`next start`, not `next dev`):
+base64 round-trip produces byte-identical, valid JPEGs; a bad file ID fails
+cleanly (404) without affecting any other key; a burst of 30 distinct images
+cold took 8.6s with 0 failures, and the **identical burst repeated
+immediately after took 94ms total** — the whole point of a shared cache
+being warm rather than each instance re-paying Drive's cost independently.
 
 ## Brand split (KK vs R-Studio vs Other/Non-Gown)
 
