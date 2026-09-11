@@ -292,20 +292,41 @@ function extractRow(colMap: ColumnMap, r: SheetRow): ParsedRow {
 // ─── MAIN PROCESSOR ─────────────────────────────────────────────────────────
 
 /**
+ * Buyer names that are void/cancellation markers, not real customers —
+ * confirmed with the user (Sep 2026): "CHANGE BARCODE" is how Oracle records
+ * a barcode being cancelled/reissued, filed under a fake party name. Must
+ * never appear anywhere in the dashboard — not in totals, not as a customer,
+ * not in any tab — so these rows are dropped before anything else touches
+ * them, for both sales and returns, rather than filtered out in just one
+ * view. Add further confirmed void-markers here, not ad hoc per feature.
+ */
+const EXCLUDED_BUYERS = new Set(["CHANGE BARCODE"]);
+
+function isExcludedBuyer(name: unknown): boolean {
+  return EXCLUDED_BUYERS.has(String(name ?? "").trim().toUpperCase());
+}
+
+/**
  * @param rows Sales/dispatch rows (required).
  * @param returnRows Goods Return rows (optional — omit or pass [] when the
  *   returns tab isn't configured; every figure stays gross, dashboard renders
  *   exactly as it did before returns existed).
  */
-export function process(rows: SheetRow[], returnRows: SheetRow[] = []): DashboardData {
-  if (!rows.length) {
+export function process(rowsIn: SheetRow[], returnRowsIn: SheetRow[] = []): DashboardData {
+  if (!rowsIn.length) {
     throw new Error("Sheet has no data rows.");
   }
 
-  const colMap = detectColumns(Object.keys(rows[0]), "Sales sheet");
-  const returnsColMap = returnRows.length
-    ? detectColumns(Object.keys(returnRows[0]), "Goods Return sheet")
+  const colMap = detectColumns(Object.keys(rowsIn[0]), "Sales sheet");
+  const returnsColMap = returnRowsIn.length
+    ? detectColumns(Object.keys(returnRowsIn[0]), "Goods Return sheet")
     : null;
+
+  // Drop void/cancellation rows before anything else sees them.
+  const rows = rowsIn.filter((r) => !isExcludedBuyer(r[colMap.cust]));
+  const returnRows = returnsColMap
+    ? returnRowsIn.filter((r) => !isExcludedBuyer(r[returnsColMap.cust]))
+    : returnRowsIn;
 
   // ── Accumulators ────────────────────────────────────────────────────────
   type SubAcc   = { qty: number; rev: number; custs: Set<string>; styles: Set<string> };

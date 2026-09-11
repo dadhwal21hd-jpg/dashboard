@@ -404,6 +404,31 @@ narrowing the window would break. `GOODS_RETURN` has no reason/cause column,
 so there's no by-reason breakdown; don't add one without a real column to
 back it.
 
+**Void/cancellation rows are dropped before anything else touches them.**
+Found while investigating a report of "26k pieces sold" under an unexplained
+customer: `EXCLUDED_BUYERS` in [src/lib/processor.ts](src/lib/processor.ts)
+— currently just `"CHANGE BARCODE"` — filters both `rows` and `returnRows`
+immediately after column detection, before the main aggregation loop or
+`raw`/`returns_raw` construction ever see them. Confirmed with the user:
+these are barcode cancellations filed under a fake party name, not real
+sales — 967 rows, 970 units, ₹2.2 crore in "revenue" at normal per-unit
+prices (this was not a token/placeholder pattern; most rows had completely
+plausible prices, which is what made it worth a real question rather than an
+assumption). Must never surface anywhere — not totals, not as a customer, not
+in any tab — so exclusion happens at ingestion, not filtered per-view. Add
+further confirmed void-markers to the same set, not ad hoc per feature.
+
+**Sanity-check outlier rows before trusting a big number.** The "26k pieces"
+report traced to two single rows (Quantity 5,609 and 20,449) with every other
+field blank — almost certainly a value pasted into the wrong column, not a
+real bulk sale. Compare against a **real** bulk order found in the same
+sweep: 7 rows, 21–47 units each, all tied to one real customer with real
+style codes and real prices — clearly legitimate wholesale volume, left
+alone. The distinguishing signal was never the quantity alone; it was
+whether the row had anything else recognisable in it. The two bad rows were
+fixed at the source by the user during this investigation, not by any code
+change here.
+
 ## Customer clusters
 
 [src/lib/clusters.ts](src/lib/clusters.ts) hand-maps duplicate/related customer
