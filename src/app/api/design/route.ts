@@ -38,13 +38,15 @@ function imageResponse(buf: Buffer, type: string) {
       "Content-Type": type,
       // Private: it's a signed URL, so only the browser that has it may cache
       // — no shared/CDN caching, since the token in the URL is per-user.
-      // max-age matches getStableDesignToken()'s 6h reuse window (see
+      // max-age matches getStableDesignToken()'s ~25-day reuse window (see
       // src/lib/signing.ts): once that token rotates, this exact URL is
       // never requested again anyway, so caching longer buys nothing.
       // "immutable" because within that window the URL genuinely never
       // changes what it returns — worth telling the browser so it skips
-      // even a revalidation request, not just a fresh download.
-      "Cache-Control": "private, max-age=21600, immutable",
+      // even a revalidation request, not just a fresh download. This is
+      // "keep the photo basically forever" for a real, everyday browser —
+      // it just isn't literally infinite, because the token isn't either.
+      "Cache-Control": "private, max-age=2160000, immutable",
     },
   });
 }

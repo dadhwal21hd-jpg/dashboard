@@ -22,8 +22,19 @@ export interface DriveImage {
 
 const LIST_TAG = "drive-list";
 const BYTES_TAG = "drive-bytes";
-const LIST_REVALIDATE_SECONDS = 30 * 60;
-const BYTES_REVALIDATE_SECONDS = 60 * 60;
+/**
+ * `false` = never revalidate on a timer, only via an explicit revalidateTag
+ * (clearDriveCache(), wired to /api/dashboard's `?refreshImages=1` — a
+ * separate, deliberately undocumented-in-UI param, NOT the routine
+ * "↻ Refresh data" button. Refresh Data must not bust this cache, or every
+ * routine refresh would force everyone to re-download every photo).
+ * Deliberate: a design photo essentially never changes in place once
+ * uploaded (a *new* photo gets a new Drive file ID, which is just a new
+ * cache entry, not a stale one), so there's no real freshness window to
+ * pick — the honest answer to "how long should this stay cached" is
+ * "until someone says otherwise", which is what `false` means here.
+ */
+const CACHE_FOREVER = false;
 
 function driveClient() {
   return google.drive({ version: "v3", auth: buildDesignsAuth([SCOPE_DRIVE]) });
@@ -55,7 +66,7 @@ async function computeFolderImages(folderId: string): Promise<DriveImage[]> {
 }
 
 const cachedFolderImages = unstable_cache(computeFolderImages, [LIST_TAG], {
-  revalidate: LIST_REVALIDATE_SECONDS,
+  revalidate: CACHE_FOREVER,
   tags: [LIST_TAG],
 });
 
@@ -116,7 +127,7 @@ interface CachedImage {
  * The actual fetch, tried public-first then authenticated (see
  * fetchPublicThumbnail). THROWS when neither path produces an image — this
  * is deliberate, not a bug: the result is cached cluster-wide for
- * BYTES_REVALIDATE_SECONDS (see cachedImageBytes below), and a module-level
+ * CACHE_FOREVER (see cachedImageBytes below), and a module-level
  * cache used to mean a transient failure only cost one lambda instance one
  * miss. A shared cache makes that failure durable and global instead unless
  * we refuse to cache it — same fix already applied to fetchDesignMap() in
@@ -163,7 +174,7 @@ async function computeImageBytes(fileId: string, size: string): Promise<CachedIm
 }
 
 const cachedImageBytes = unstable_cache(computeImageBytes, [BYTES_TAG], {
-  revalidate: BYTES_REVALIDATE_SECONDS,
+  revalidate: CACHE_FOREVER,
   tags: [BYTES_TAG],
 });
 

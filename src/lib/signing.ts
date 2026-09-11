@@ -14,7 +14,17 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { unstable_cache } from "next/cache";
 
-const DEFAULT_TTL_MS = 12 * 60 * 60 * 1000; // outlives a working day of one page
+/**
+ * 30 days, not 12 hours — deliberately long. This token only grants reads of
+ * design images, and every one sampled (40+ across the full catalogue) is
+ * already shared "anyone with the link" on Drive — i.e. genuinely public
+ * already, confirmed directly, not assumed. A longer-lived token doesn't
+ * expose anything that wasn't already exposable to anyone holding a link; it
+ * just lets the browser (and the shared server-side cache below) treat an
+ * image's URL as stable for weeks instead of hours, which is most of what
+ * "keep the photos cached" means in practice — see getStableDesignToken.
+ */
+const DEFAULT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 function secret(): string {
   const s = process.env.NEXTAUTH_SECRET;
@@ -33,9 +43,12 @@ export function mintDesignToken(sub: string, ttlMs = DEFAULT_TTL_MS): string {
   return `${Buffer.from(payload).toString("base64url")}.${sign(payload)}`;
 }
 
+/** Kept safely under DEFAULT_TTL_MS so a cached token is never handed out
+ *  already-expired even right before its own revalidation runs. */
+const STABLE_TOKEN_REVALIDATE_SECONDS = 25 * 24 * 60 * 60; // 25 of the token's 30 days
+
 /**
- * Same token, reused across page loads for up to 6 hours (well under the
- * 12h token TTL, so it's never handed out already-expired).
+ * Same token, reused across page loads for weeks (see DEFAULT_TTL_MS).
  *
  * Why this exists: /api/dashboard used to call mintDesignToken() fresh on
  * every request. Design-image URLs embed this token (`&t=...`), so a fresh
@@ -48,7 +61,7 @@ export function mintDesignToken(sub: string, ttlMs = DEFAULT_TTL_MS): string {
 export const getStableDesignToken = unstable_cache(
   async (sub: string) => mintDesignToken(sub),
   ["design-token"],
-  { revalidate: 6 * 60 * 60, tags: ["design-token"] },
+  { revalidate: STABLE_TOKEN_REVALIDATE_SECONDS, tags: ["design-token"] },
 );
 
 /** True when the token is well-formed, unexpired and correctly signed. */

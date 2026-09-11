@@ -6,7 +6,18 @@
  * DATA constant injected at the /*__DATA__*\/ placeholder.
  *
  * Query params:
- *   ?refresh=1   forces a fresh fetch, bypassing the cache.
+ *   ?refresh=1        forces a fresh fetch of orders/returns/design-map,
+ *                     bypassing their caches.
+ *   ?refreshImages=1  ALSO force-clears the cached design *photos*
+ *                     (src/lib/drive.ts) — deliberately separate from
+ *                     ?refresh=1: those photos are cached indefinitely (see
+ *                     drive.ts's CACHE_FOREVER) because a design photo
+ *                     essentially never changes in place, so a routine data
+ *                     refresh must not silently nuke that cache and force
+ *                     everyone to re-download every photo. Use this one only
+ *                     when a specific photo actually was replaced on Drive
+ *                     and needs to show up sooner than "next full sync
+ *                     picks up the new file ID" would otherwise handle.
  *
  * Response: text/html (the dashboard, ready to render).
  *
@@ -22,6 +33,7 @@ import { fetchSheetRows, fetchReturnsRows } from "@/lib/sheets";
 import { process as runProcessor } from "@/lib/processor";
 import { fetchDesignMap, designsConfigured } from "@/lib/designs";
 import { getStableDesignToken } from "@/lib/signing";
+import { clearDriveCache } from "@/lib/drive";
 
 export const dynamic = "force-dynamic"; // never statically cache this route
 
@@ -33,6 +45,9 @@ export async function GET(req: NextRequest) {
   }
 
   const force = req.nextUrl.searchParams.get("refresh") === "1";
+  if (req.nextUrl.searchParams.get("refreshImages") === "1") {
+    clearDriveCache();
+  }
 
   try {
     // ── Fetch + process ───────────────────────────────────────────────────

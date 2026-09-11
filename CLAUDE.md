@@ -180,6 +180,39 @@ Measured effect of both together: a burst of 60 concurrent thumbnail
 requests went from ~8s wall time with 3 failures (Drive quota/backoff under
 load) to ~2.7s with 0 failures on the same infrastructure.
 
+**Cached "basically forever" (Sep 2026 follow-up)**, per the user asking to
+keep photos cached always:
+
+- The design token (`getStableDesignToken()` in
+  [src/lib/signing.ts](src/lib/signing.ts)) now lives 30 days
+  (`DEFAULT_TTL_MS`), reused for 25 of those days
+  (`STABLE_TOKEN_REVALIDATE_SECONDS`) before a fresh one is minted — up from
+  6h. Deliberately long, not reckless: every sampled design image is already
+  shared "anyone with the link" on Drive, so a longer-lived token doesn't
+  expose anything that wasn't already exposable to anyone holding a link; it
+  just lets the browser and the shared cache below treat an image URL as
+  stable for weeks instead of hours.
+- `/api/design`'s `Cache-Control` ([src/app/api/design/route.ts](src/app/api/design/route.ts))
+  is `private, max-age=2160000, immutable` (25 days), matching that window —
+  once the token rotates, the old URL is never requested again anyway, so
+  caching longer than the token's life buys nothing.
+- `drive.ts`'s two `unstable_cache`s (folder listings, image bytes) use
+  `revalidate: false` (`CACHE_FOREVER`) instead of a timed window — never
+  revalidates on a schedule, only via an explicit `revalidateTag`. A design
+  photo essentially never changes in place once uploaded (a *new* photo gets
+  a new Drive file ID, i.e. a new cache entry, not a stale one), so there was
+  no real freshness window to pick in the first place.
+- `clearDriveCache()` (previously dead code) is wired to a **new,
+  deliberately separate** query param: `GET /api/dashboard?refreshImages=1`.
+  This is intentionally NOT the routine "↻ Refresh data" button
+  (`?refresh=1`, [src/app/dashboard/page.tsx](src/app/dashboard/page.tsx)) —
+  busting the image cache on every routine data refresh would force
+  everyone to re-download every photo on every refresh, defeating the whole
+  point of caching forever. `refreshImages=1` is an undocumented-in-UI
+  escape hatch (same precedent as `/api/design?diag=1`) for the rare case a
+  specific photo was actually replaced on Drive and needs to show up sooner
+  than "next time someone changes the catalogue's file ID" would handle.
+
 **A third, later fix (Sep 2026): thumbnails were still slow on repeat views**
 — single loads measured 0.7–2.8s live even after the above, and a *repeat*
 request for the exact same image was still ~300–600ms, never near-instant.
