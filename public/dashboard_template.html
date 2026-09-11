@@ -1151,9 +1151,9 @@ function setCustView(view) {
 
 function getStyleThreshold() {
   const el = document.getElementById('style-threshold');
-  if (!el) return 10;
+  if (!el) return 0;
   const v = parseInt(el.value, 10);
-  return Number.isFinite(v) && v >= 0 ? v : 10;
+  return Number.isFinite(v) && v >= 0 ? v : 0;
 }
 
 function onStyleThresholdChange() {

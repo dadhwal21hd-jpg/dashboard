@@ -696,6 +696,6 @@ export function process(rowsIn: SheetRow[], returnRowsIn: SheetRow[] = []): Dash
     clustered_customers: clusteredCustomers,
     clustered_drill: clusteredDrill,
     cluster_membership: clusterMembership,
-    style_threshold_default: 10,
+    style_threshold_default: 0,
   };
 }
