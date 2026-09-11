@@ -182,48 +182,46 @@ load) to ~2.7s with 0 failures on the same infrastructure.
 
 ## Brand split (KK vs R-Studio vs Other/Non-Gown)
 
-A business rule, not a sheet column. Two layers, checked in order:
+**Authoritative classification is server-side and Item-Description-first**:
+`classifyBrand(itemDesc, sn)` in [src/lib/processor.ts](src/lib/processor.ts),
+stored on every row as `RawRow.br`. When `Item Description` is present
+(Oracle's shape), it's ground truth, checked before the style number is
+looked at all:
+- doesn't contain "gown" (SAMPLE, DUPATTA, PENT, FABRIC UNSTICHED SAARI,
+  blanks, …) → **Other / Non-Gown**
+- starts with "KK" (`"KK GOWN"`, `"KK GOWN VELVET"`) → **KK**
+- otherwise (`"GOWN"`, `"GOWN SHIRT"`, `"BELT GOWN"`, …) → **R-Studio**
 
-1. **Gown-family or not**, from Oracle's `Item Description` (`isGownFamily()`
-   in [src/lib/processor.ts](src/lib/processor.ts), stored server-side as
-   `RawRow.g`) — anything not containing "gown" (SAMPLE, DUPATTA, PENT,
-   FABRIC UNSTICHED SAARI, blanks, …) is **Other / Non-Gown**, full stop,
-   regardless of its style number. This exists because a numeric style number
-   alone can't tell a non-Gown item apart from a real Gown SKU sharing the
-   same numeric range — confirmed with a synthetic case: a DUPATTA row with
-   style number 56809 (≥50,000) would have been silently miscounted as
-   R-Studio without this check. Not yet exercised by real data — the two live
-   Oracle tabs are 100% Gown-family — but the classification is real and
-   tested (see `isGownFamily()`'s own tests), not speculative. Sheet with no
-   `Item Description` column at all (old shape) defaults every row to
-   Gown-family, matching prior behaviour exactly.
-2. **For Gown-family rows only**, `brandOf(sn)` classifies the style number:
-   - style number **< 50,000** → **KK**
-   - style number **≥ 50,000**, or an **`NR-xxx`** / **`CH-xxx`**-coded style → **R-Studio**
-   - anything else (doesn't parse as a plain number, isn't `NR-` or `CH-`) → **Unclassified**
+Only when there's **no** `Item Description` column at all (old-sheet shape)
+does it fall back to the numeric/prefix rule: style **< 50,000** → KK; **≥
+50,000** or `NR-xxx`/`CH-xxx` → R-Studio; anything else → Unclassified.
 
-**Use `rowBrand(r)` (has a raw row) or `styleBrand(sn)` (has only a style
-number) — not `brandOf(sn)` directly** — anywhere real data is being
-classified; `brandOf()` alone skips the Gown-family check. `styleBrand()` is
-backed by a `sn → Gown-family` lookup built once from `D.raw` (not
-`FILTERED_RAW` — a style's category doesn't change with the date/brand/qty
+**This replaced an item-description-blind version of the rule that shipped
+first and was wrong for ~3.9% of real rows.** The numeric threshold was
+originally the *only* signal (built for the old sheet, which had no Item
+Description at all) and looked solid — verified clean against the ~2-month
+live window available at the time (0 disagreements). Once the full Apr
+2021–Sep 2026 history (79,372 rows, the `DASH` tab) was available to check
+against, ~3,100 rows disagreed: almost all a plain `"GOWN"` (R-Studio) item
+whose style number happens to be under 50,000, which the numeric rule alone
+called KK. **Lesson recorded here on purpose**: a small live window verifying
+clean is not proof a rule is correct — Item Description was sitting right
+there the whole time and is unambiguous; the numeric rule should have been
+the fallback from the start, not the primary signal, once real data existed
+to check it against.
+
+**Client code must read `r.br` (via `rowBrand(r)` for a row, `styleBrand(sn)`
+for a style number alone) — there is no client-side re-derivation from `sn`
+anymore.** The old `brandOf(sn)` client function that inferred brand purely
+from the style number's shape has been removed entirely; don't recreate it.
+`styleBrand()` is backed by a `sn → br` lookup built once from `D.raw` (not
+`FILTERED_RAW` — a style's brand doesn't change with the date/brand/qty
 filter), same lazy-cache pattern as `globalStyleMap()`.
 
-(Corrected twice in review: `NR-xxx` was first thought to be KK, then it and
-`CH-xxx` were confirmed to both be R-Studio — the numeric-only rule was right
-from the start, the prefixes just needed to land on the same side as the
-≥50,000 numerics, not the <50,000 side.)
-
-Verified against the live orders sheet: the numeric boundary is completely
-clean (no style has ever sat at 49999/50000/50001), and as of writing **zero**
-orders fall into Unclassified. `NR-xxx` and `CH-xxx` both exist in the design
-catalogues (hundreds of codes between them) but **neither has ever been
-ordered** — the rule is real and coded correctly, but currently inert; don't
-be surprised if the KK/R-Studio split accounts for 100% of live data with
-nothing landing in Unclassified. If a *third* prefix ever gets ordered, it'll
-correctly show up as Unclassified rather than being silently miscounted into
-either brand — that bucket exists specifically as a safety net, and is the
-place to add the next prefix once it's confirmed.
+At `DASH`-tab scale, `Other`/`Unclassified` are genuinely rare (631 and 6 of
+79,372 rows respectively) — if either climbs meaningfully after a data
+refresh, that's a real signal (a new non-Gown category, or a row with a blank
+Item Description), not noise to ignore.
 
 It's wired in as a value on the **global filter bar** (`BRAND_FILTER`,
 alongside `DATE_FROM`/`FILTER_MIN_QTY`/etc.), not a separate tab — selecting a
@@ -305,12 +303,38 @@ same service account, same spreadsheet, two tabs. A person keeps this "live"
 tab updated from Oracle until API access exists; Supabase is the plan after
 that, not before — don't build toward it speculatively.
 
-**A large historical tab (`Sheet5`, 2021–2025, ~47k rows) exists in the same
-spreadsheet but is deliberately NOT read** — the user is cleaning it
-separately and will hand it over later. `Sheet5`'s data shape is messier than
-the two live tabs (20+ `Item Description` categories, inconsistent `Design`
-formats with no dot separator, alphanumeric suffixes) — don't assume today's
-parsing handles it; re-verify against a real sample before wiring it in.
+**Update (Sep 2026, second pass)**: the user consolidated and cleaned the full
+history into a new **`DASH`** tab in the same spreadsheet — 79,372 rows,
+Apr 2021 through Sep 2026, superseding `ORACLE_UPDATED` (whose ~2-month
+window is a subset of `DASH`'s range) as the value for `GOOGLE_SHEET_RANGE`.
+Verified end-to-end against the real tab before recommending the cutover:
+`process()` completes without error, dates parse at 99.99% (79,368/79,372),
+`Design` parses with a subcut+dot at 99.07% of rows, and the raw payload
+compresses to ~310KB (brotli) — no scaling concern at this size. The earlier
+`isGownFamily()`/`RawRow.g` design was replaced by `classifyBrand()`/
+`RawRow.br` (see "Brand split" above) specifically because checking the full
+`DASH` history surfaced the numeric-threshold rule's real error rate, which a
+~2-month window couldn't have shown.
+
+**Known, not yet resolved**: ~3,770 rows (4.7%) have a non-numeric suffix
+after the `Design` field's dot — e.g. `G-SG.16944C` (style `16944` + variant
+`C`), `G-SG.53211[CH224]`. `parseDesign()` currently keeps these verbatim as
+the style number (so `sn` becomes `"16944C"` rather than `"16944"`), which
+doesn't affect brand (Item Description settles that regardless) but does
+affect **style-level grouping** — the Style Numbers tab and design-thumbnail
+lookup would treat `16944` and `16944C` as different styles, and a design
+image keyed by the bare numeric code wouldn't match the suffixed rows. Not
+fixed because it's a real judgement call, not a parsing bug: are these
+distinct product variants (colourways) that *should* stay separate, or
+formatting noise that should collapse into the base style number? Ask before
+changing `parseDesign()`'s behaviour here — collapsing them wrong would
+under-count real product variety; leaving them wrong under-counts a style's
+true sales by splitting them across suffixed variants.
+
+`Sheet5`'s original, messier shape (20+ `Item Description` categories,
+`Design` formats with no dot, alphanumeric suffixes) is what `DASH` was
+cleaned from — most of that messiness is gone in `DASH`, but the suffix issue
+above is what's left of it.
 
 **Oracle's `Design` column packs sub-cut + style number into one cell** — e.g.
 `G-SGONC.84752` → subcut `SGONC`, style `84752` (confirmed with the user).
@@ -320,12 +344,9 @@ columns exist, so an old-shape sheet (dedicated columns) still works
 unchanged if this is ever pointed at one again. Both `ORACLE_UPDATED` and
 `GOODS_RETURN` use this format; verified against real data, not assumed.
 
-**Brand comes for free** — Oracle's `Item Description` is literally `"GOWN"`
-(R-Studio) or `"KK GOWN"`/`"KK GOWN VELVET"` (KK), and this lines up exactly
-with the existing numeric `brandOf()` rule once the style number is correctly
-extracted from `Design` — confirmed against real data (KK-prefixed rows'
-style numbers were all <50,000, plain GOWN rows' all ≥50,000). No brand field
-was added to `RawRow`; `brandOf()` needed no changes.
+**Brand comes from `Item Description`, not the style number** — see "Brand
+split" above for the full story of how this rule was corrected once the full
+history was available to check it against.
 
 **Oracle dates are `DD/Mon/YY` *and* `DD-Mon-YY`** — both separators occur
 within the same sheet (confirmed: ~700/2244 rows in one snapshot used
@@ -355,11 +376,13 @@ explicit subtraction, not by mixing sign-flipped rows into `raw`.
 
 **Aggregate netting, not exact-bill-match** — confirmed with the user. Most
 Goods Return bill numbers don't resolve to a sale in whatever window is
-currently loaded (a return can reference a sale from before that window, or
-from `Sheet5`, not yet provided), so matching would silently drop most
-returns. A net total **can go negative** for a customer/style with no
-matching sale in the loaded data — left as-is deliberately, since clamping to
-zero would hide a real data gap instead of surfacing it.
+currently loaded (a return can reference a sale from before that window), so
+matching would silently drop most returns. With `DASH` as the sales source
+this matters much less — `GOODS_RETURN`'s own date range sits comfortably
+inside `DASH`'s — but the aggregate-netting design stays regardless: a net
+total **can still go negative** for a customer/style with no matching sale in
+the loaded data, left as-is deliberately, since clamping to zero would hide a
+real data gap instead of surfacing it.
 
 **Returns deliberately never touch**: `.dates`/`freq` accumulators anywhere
 (a return isn't a reorder), `monthlyAcc`/`moA` (a return isn't dispatch
@@ -392,8 +415,9 @@ Raas Group (the shared word "FRONTIER" is distinctive enough in this customer
 list to trust). Several other Oracle names share only generic words with
 existing clusters (e.g. "fashion", "house") — deliberately **not** merged
 without confirmation, since a wrong merge misrepresents a real business
-relationship. Worth a proper pass once `Sheet5` brings in the full customer
-list.
+relationship. `DASH` (see "Oracle source" above) has 70 distinct buyer names,
+the full historical set — worth a proper cluster-list audit against it before
+relying on the Clustered customer view for anything from before Sep 2026.
 
 ## Working notes
 

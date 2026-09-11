@@ -1561,68 +1561,49 @@ function buildAnalytics(rows) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// BRAND SPLIT (business rule, not derived from any sheet column)
-//   Not Gown-family (Item Description doesn't contain "gown") → other
-//   style number < 50,000                              → KK
-//   style number ≥ 50,000, or "NR-xxx"/"CH-xxx" coded   → R-Studio
-//   anything else (doesn't parse as a plain number, isn't
-//   NR- or CH-prefixed) → unknown. Neither NR- nor CH- coded
-//   styles had ever actually been ordered as of this being
-//   written, so this rule was inert in the live data at the
-//   time — a safety net for future orders, not a tested-against
-//   live category. If more prefixes turn up, add them here.
+// BRAND SPLIT (business rule; authoritative classification is server-side)
 //
-// The "other" check runs first and needs the row's D.raw.g flag (set
-// server-side from Item Description, see isGownFamily() in processor.ts) —
-// brandOf(sn) alone can't tell a non-Gown item apart from a real Gown SKU
-// that happens to share its numeric range, so anything iterating actual rows
-// must use rowBrand(r)/styleBrand(sn) below, not brandOf() directly, once
-// non-Gown rows exist (Sheet5 — not live in the current two Oracle tabs,
-// which are 100% Gown-family, so this is a real classification but not
-// something visibly exercised yet).
+// Brand is computed once, server-side, in classifyBrand() (processor.ts) and
+// shipped as r.br on every raw row — Item Description is ground truth when
+// present ("GOWN" → R-Studio, "KK GOWN"/"KK GOWN VELVET" → KK, anything else
+// → Other/Non-Gown), falling back to a numeric/prefix rule (style < 50,000 =
+// KK, ≥50,000 or NR-/CH- prefixed = R-Studio) only for a sheet with no Item
+// Description column at all.
+//
+// This USED to be inferred purely from the style number on the client, which
+// silently disagreed with Item Description on ~3,100 rows (3.9%) once tested
+// against the full Apr 2021–Sep 2026 history — almost all a plain "GOWN"
+// item whose style number happens to be under 50,000, which the numeric-only
+// rule alone would call KK. The ~2-month live window this first shipped
+// against happened to have zero such disagreements, which is why it wasn't
+// caught immediately — don't trust a small window to represent the whole
+// history's edge cases again.
 // ══════════════════════════════════════════════════════════════
 const BRAND_LABEL = { kk: 'KK', rstudio: 'R-Studio', other: 'Other / Non-Gown', unknown: 'Unclassified' };
 const BRAND_BADGE_CLASS = { kk: 'bg', rstudio: 'bb', other: 'bc', unknown: 'br' };
 
-function brandOf(sn) {
-  const s = String(sn || '').trim();
-  if (!s) return 'unknown';
-  if (/^(NR|CH)-?/i.test(s)) return 'rstudio';
-  if (/^\d+$/.test(s)) return Number(s) < 50000 ? 'kk' : 'rstudio';
-  return 'unknown';
-}
-
-/** Brand for one raw row — checks Gown-family first (r.g, server-computed
- *  from Item Description), falling through to the numeric/prefix rule above
- *  only for Gown-family rows. Use this (not brandOf()) wherever an actual
- *  row is in hand. */
+/** Brand for one raw row — just reads the server-computed r.br. */
 function rowBrand(r) {
-  if (r && r.g === false) return 'other';
-  return brandOf(r && r.sn);
+  return (r && r.br) || 'unknown';
 }
 
-// sn -> Gown-family, built once from the full (unfiltered) history — a style
-// number's category doesn't change with the date/qty/price/brand filter, so
-// this is safe to cache indefinitely, same pattern as globalStyleMap().
-let _STYLE_GOWN = null;
-function styleIsGownFamily(sn) {
-  if (!_STYLE_GOWN) {
-    _STYLE_GOWN = {};
-    for (const r of D.raw) if (r.sn && !(r.sn in _STYLE_GOWN)) _STYLE_GOWN[r.sn] = r.g !== false;
-  }
-  return _STYLE_GOWN[sn] !== false;
-}
-
+// sn -> br, built once from the full (unfiltered) history — a style number's
+// brand doesn't change with the date/qty/price/brand filter, so this is safe
+// to cache indefinitely, same pattern as globalStyleMap().
+let _STYLE_BRAND = null;
 /** Brand for a style number on its own (no row in hand) — e.g. table rows
  *  that only ever had `s.n`, not the underlying raw row. */
 function styleBrand(sn) {
-  if (!styleIsGownFamily(sn)) return 'other';
-  return brandOf(sn);
+  if (!_STYLE_BRAND) {
+    _STYLE_BRAND = {};
+    for (const r of D.raw) if (r.sn && !(r.sn in _STYLE_BRAND)) _STYLE_BRAND[r.sn] = r.br;
+  }
+  return _STYLE_BRAND[sn] || 'unknown';
 }
 
 function brandBadge(sn) {
   const b = styleBrand(sn);
-  return `<span class="badge ${BRAND_BADGE_CLASS[b]}" style="font-size:9px" title="Brand split: style < 50,000 = KK · ≥ 50,000 or NR-xxx/CH-xxx = R-Studio · non-Gown items = Other">${BRAND_LABEL[b]}</span>`;
+  return `<span class="badge ${BRAND_BADGE_CLASS[b]}" style="font-size:9px" title="Brand: Item Description is ground truth (GOWN=R-Studio, KK GOWN=KK, non-Gown=Other); numeric style-number rule is only a fallback">${BRAND_LABEL[b]}</span>`;
 }
 
 /** True when any control in the global filter bar would narrow the data —

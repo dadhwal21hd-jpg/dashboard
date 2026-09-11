@@ -217,24 +217,43 @@ function detectColumns(headers: string[], sourceLabel: string): ColumnMap {
   return colMap as ColumnMap;
 }
 
+export type Brand = "kk" | "rstudio" | "other" | "unknown";
+
 /**
- * Whether an Item Description belongs to the Gown business the KK/R-Studio
- * brand split covers — anything else (SAMPLE, DUPATTA, PENT, FABRIC UNSTICHED
- * SAARI, blanks, ...) goes in the "Other / Non-Gown" bucket instead, since a
- * numeric style number alone can't tell those apart from a real Gown SKU in
- * the same numeric range. No Item Description column at all (old-sheet
- * shape) defaults to true — there's no signal to say otherwise, and every
- * row in that shape *was* Gown-family in practice.
+ * Authoritative per-row brand classification. Item Description is GROUND
+ * TRUTH when present (Oracle's shape) — not merely a Gown/non-Gown check
+ * with the numeric threshold still deciding KK vs R-Studio underneath.
  *
- * Rule, confirmed as a reasonable default (not yet tested against real
- * non-Gown rows — the two live Oracle tabs only ever contain "GOWN"/"KK
- * GOWN"): contains the word "gown", case-insensitive. So "GOWN SHIRT",
- * "BELT GOWN", "GOWN SKIRT" etc. count as Gown-family; revisit this if that
- * turns out too broad or too narrow once Sheet5's real category mix is in.
+ * Why: cross-checked Item Description against the numeric threshold across
+ * the full Apr 2021–Sep 2026 history (79,372 rows) once real historical data
+ * was available (the ~2-month live window this rule first shipped against
+ * happened to have zero disagreements — not representative). Found ~3,100
+ * rows (3.9%) where they disagree, almost all a plain "GOWN" (R-Studio) item
+ * whose style number happens to fall under 50,000, which the numeric rule
+ * alone would call KK. Item Description wins every time there's a conflict —
+ * it's literally what Oracle calls the product; the numeric threshold was
+ * always a proxy, built for the old sheet which had no Item Description at
+ * all.
+ *
+ * "Other / Non-Gown": anything not containing "gown" (SAMPLE, DUPATTA, PENT,
+ * FABRIC UNSTICHED SAARI, blanks, ...) — confirmed with the user. Numeric
+ * fallback below only applies when there's no Item Description column at
+ * all (old-sheet shape) — there's no signal to say otherwise there, and
+ * every row in that shape *was* Gown-family in practice.
  */
-export function isGownFamily(itemDesc: string | undefined): boolean {
-  if (itemDesc === undefined) return true;
-  return /gown/i.test(itemDesc);
+export function classifyBrand(itemDesc: string | undefined, sn: string): Brand {
+  if (itemDesc !== undefined) {
+    const d = itemDesc.trim().toUpperCase();
+    if (!d) return "unknown";
+    if (!d.includes("GOWN")) return "other";
+    return d.startsWith("KK") ? "kk" : "rstudio";
+  }
+  // No Item Description column — numeric/prefix fallback (old-sheet shape).
+  const s = String(sn || "").trim();
+  if (!s) return "unknown";
+  if (/^(NR|CH)-?/i.test(s)) return "rstudio";
+  if (/^\d+$/.test(s)) return Number(s) < 50000 ? "kk" : "rstudio";
+  return "unknown";
 }
 
 interface ParsedRow {
@@ -244,7 +263,7 @@ interface ParsedRow {
   qty: number;
   price: number;
   date: string;
-  gown: boolean;
+  brand: Brand;
 }
 
 /** One row → the six fields every aggregation below needs, using whichever
@@ -254,7 +273,6 @@ function extractRow(colMap: ColumnMap, r: SheetRow): ParsedRow {
   const price = parsePrice(r[colMap.price]);
   const cust  = (r[colMap.cust] || "Unknown").trim() || "Unknown";
   const date  = (r[colMap.date] || "").trim();
-  const gown  = isGownFamily(colMap.itemDesc ? r[colMap.itemDesc] : undefined);
 
   let sc: string, sn: string;
   if (colMap.style) {
@@ -267,7 +285,8 @@ function extractRow(colMap: ColumnMap, r: SheetRow): ParsedRow {
     sc = parsed?.subcut || "Unknown";
   }
 
-  return { cust, sc, sn, qty, price, date, gown };
+  const brand = classifyBrand(colMap.itemDesc ? r[colMap.itemDesc] : undefined, sn);
+  return { cust, sc, sn, qty, price, date, brand };
 }
 
 // ─── MAIN PROCESSOR ─────────────────────────────────────────────────────────
@@ -374,7 +393,7 @@ export function process(rows: SheetRow[], returnRows: SheetRow[] = []): Dashboar
   const returns: RawRow[] = [];
   if (returnsColMap) {
     for (const r of returnRows) {
-      const { cust, sc, sn, qty, price, date, gown } = extractRow(returnsColMap, r);
+      const { cust, sc, sn, qty, price, date, brand } = extractRow(returnsColMap, r);
       const rev = qty * price;
       totalQty -= qty;
       totalRev -= rev;
@@ -394,7 +413,7 @@ export function process(rows: SheetRow[], returnRows: SheetRow[] = []): Dashboar
       const dt = parseDate(date);
       returns.push({
         c: cust, sc, sn, q: qty, p: Math.trunc(price),
-        d: date, dt: dt ? isoDate(dt) : null, g: gown,
+        d: date, dt: dt ? isoDate(dt) : null, br: brand,
       });
     }
   }
@@ -629,7 +648,7 @@ export function process(rows: SheetRow[], returnRows: SheetRow[] = []): Dashboar
 
   // ── Raw rows (compact, for date filtering on client) ────────────────────
   const raw: RawRow[] = rows.map((r) => {
-    const { cust, sc, sn, qty, price, date, gown } = extractRow(colMap, r);
+    const { cust, sc, sn, qty, price, date, brand } = extractRow(colMap, r);
     const dt = parseDate(date);
     return {
       c: cust, sc, sn,
@@ -637,7 +656,7 @@ export function process(rows: SheetRow[], returnRows: SheetRow[] = []): Dashboar
       p: Math.trunc(price),
       d: date,
       dt: dt ? isoDate(dt) : null,
-      g: gown,
+      br: brand,
     };
   });
 

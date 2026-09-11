@@ -71,10 +71,13 @@ export interface RawRow {
   p: number;
   d: string;
   dt: string | null;
-  /** Gown-family (the KK/R-Studio brand split applies) vs everything else
-   *  ("Other / Non-Gown" bucket) — see isGownFamily() in processor.ts.
-   *  Always true for sheets with no Item Description column (old shape). */
-  g: boolean;
+  /** Authoritative brand for this row — 'kk' | 'rstudio' | 'other' |
+   *  'unknown'. Computed server-side from Item Description when present
+   *  (ground truth — see classifyBrand() in processor.ts), falling back to
+   *  the numeric/prefix rule only for sheets with no Item Description column
+   *  (old shape). Client code should read this directly rather than
+   *  re-deriving brand from `sn`. */
+  br: "kk" | "rstudio" | "other" | "unknown";
 }
 
 export interface DashboardData {
