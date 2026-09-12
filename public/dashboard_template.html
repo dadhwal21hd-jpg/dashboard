@@ -1033,7 +1033,7 @@ body.customer-mode tr.cust-revealed::before{
 <!-- RETURNS (Goods Return) -->
 <div class="section" id="tab-returns">
   <div class="sec-hdr">
-    <div><div class="sec-title">↩️ Returns</div><div class="sec-sub">Goods Return data from billing — already netted into every other number on this dashboard (units, revenue, per-customer and per-style totals). This tab is the return side on its own, rated against what was actually sold. Respects the date/brand filter above.</div></div>
+    <div><div class="sec-title">↩️ Returns</div><div class="sec-sub">Goods Return data from billing — already netted into every other number on this dashboard (units, revenue, per-customer and per-style totals). This tab is the return side on its own, rated against what was actually sold. <strong>"Sold (gross)" here is units dispatched before returns are taken off</strong> — it's the denominator the rate is measured against; every other tab shows units net of returns. Respects the date/brand filter above.</div></div>
     <button class="btn btn-outline btn-sm" onclick="exportReturnsCSV()">⬇ Export CSV</button>
   </div>
 
@@ -1072,13 +1072,13 @@ body.customer-mode tr.cust-revealed::before{
     <div class="card" style="padding:0;overflow:hidden">
       <div class="card-title" style="padding:14px 16px 0">By Customer <span style="font-weight:400;color:var(--text3);font-size:10px">— click a row for their returned styles</span></div>
       <table class="data-table"><thead><tr>
-        <th>#</th><th>Customer</th><th style="text-align:right">Returned</th><th style="text-align:right">Value</th><th style="text-align:right">Sold</th><th style="text-align:right">Rate</th><th style="text-align:center">Styles</th>
+        <th>#</th><th>Customer</th><th style="text-align:right">Returned</th><th style="text-align:right">Value</th><th style="text-align:right" title="Units dispatched BEFORE returns are taken off — this is the denominator the rate is measured against. Every other tab shows units net of returns.">Sold (gross)</th><th style="text-align:right">Rate</th><th style="text-align:center">Styles</th>
       </tr></thead><tbody id="returns-cust-tbody"></tbody></table>
     </div>
     <div class="card" style="padding:0;overflow:hidden">
       <div class="card-title" style="padding:14px 16px 0">By Style <span style="font-weight:400;color:var(--text3);font-size:10px">— click a row for who returned it</span></div>
       <table class="data-table"><thead><tr>
-        <th>#</th><th>Style</th><th style="text-align:right">Returned</th><th style="text-align:right">Value</th><th style="text-align:right">Sold</th><th style="text-align:right">Rate</th><th style="text-align:center">Buyers</th>
+        <th>#</th><th>Style</th><th style="text-align:right">Returned</th><th style="text-align:right">Value</th><th style="text-align:right" title="Units dispatched BEFORE returns are taken off — this is the denominator the rate is measured against. Every other tab shows units net of returns.">Sold (gross)</th><th style="text-align:right">Rate</th><th style="text-align:center">Buyers</th>
       </tr></thead><tbody id="returns-style-tbody"></tbody></table>
     </div>
   </div>
@@ -1248,8 +1248,13 @@ function applyLockState() {
     lbl.textContent = 'UNLOCKED';
     btn.title = 'Click to lock the dashboard';
   }
-  // Re-render customer table so cust-redacted/cust-revealed classes update
-  if (D) renderCusts();
+  // Re-render EVERYTHING, not just the customer table. Every tab that prints a
+  // buyer name through buyerLabel() — Customers, Reorder Radar, Returns and its
+  // drill-downs — bakes the lock state into its HTML at render time, so a tab
+  // rendered while locked keeps showing "CUSTOMER 01" after an unlock until it
+  // happens to re-render for some other reason. This used to call renderCusts()
+  // alone, which is why only the Customers tab updated.
+  if (D) renderAll();
 }
 
 function onLockBtnClick() {
@@ -2837,7 +2842,7 @@ function toggleReturnsCustDrill(custName, rowEl) {
 
   const html = `<table><thead><tr>
       <th>Style</th><th style="text-align:right">Returned</th><th style="text-align:right">Value</th>
-      <th style="text-align:right">They bought</th><th style="text-align:right">Their rate</th></tr></thead>
+      <th style="text-align:right">They bought (gross)</th><th style="text-align:right">Their rate</th></tr></thead>
     <tbody>${styles.map(s => `<tr>
       <td class="dc">${designThumb(s.n,'sm')} <strong style="font-family:'IBM Plex Mono',monospace;color:${scColor(s.sc)};vertical-align:middle">#${esc(s.n)}</strong>
         <span style="color:var(--text3);font-size:10px">${esc(s.sc||'')}</span></td>
@@ -2870,7 +2875,7 @@ function toggleReturnsStyleDrill(sn, rowEl) {
   const html = `<div style="font-size:11px;color:var(--text2);margin:8px 0 4px">${read}</div>
     <table><thead><tr>
       <th>Customer</th><th style="text-align:right">Returned</th><th style="text-align:right">Value</th>
-      <th style="text-align:right">They bought</th><th style="text-align:right">Their rate</th></tr></thead>
+      <th style="text-align:right">They bought (gross)</th><th style="text-align:right">Their rate</th></tr></thead>
     <tbody>${custs.map((c,i) => `<tr>
       <td class="dc" style="font-weight:500">${buyerLabel(c.name, i)}</td>
       <td class="dc num"><strong>${fN(c.qty)}</strong></td>
