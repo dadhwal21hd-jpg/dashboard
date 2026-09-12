@@ -718,6 +718,30 @@ body.customer-mode tr.cust-revealed::before{
 }
 .lock-boot .ok{color:#5cffaa;}
 
+/* ── Returns (Goods Return) module ───────────────────────────────
+   Rate cells carry their own bar so a high-rate/low-volume row reads
+   differently from a high-volume/low-rate one at a glance. Severity
+   colours only — no new palette. */
+.ret-rate{display:flex;align-items:center;gap:7px;justify-content:flex-end;}
+.ret-rate-n{font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:12px;min-width:44px;text-align:right;}
+.ret-rate-bar{width:46px;height:5px;background:#f0ede8;border-radius:2px;overflow:hidden;flex:none;}
+.ret-rate-bar > i{display:block;height:100%;border-radius:2px;opacity:.8;}
+.ret-thin{color:var(--text3)!important;font-weight:400!important;}
+.ret-row{cursor:pointer;}
+.ret-row .ret-arrow{color:var(--text3);font-size:9px;margin-right:6px;display:inline-block;width:8px;}
+.ret-row.open{background:#fdf0e8;}
+.ret-row.open td{background:#fdf0e8;}
+.ret-drill td{background:#faf9f7;padding:0 12px 12px;}
+.ret-drill table{width:100%;border-collapse:collapse;font-size:11.5px;}
+.ret-drill th{padding:6px 8px;text-align:left;font-family:'IBM Plex Mono',monospace;font-size:9px;
+  text-transform:uppercase;letter-spacing:.8px;color:var(--text3);border-bottom:1px solid var(--border);}
+.ret-drill td.dc{padding:6px 8px;border-bottom:1px solid #eee8e0;background:transparent;}
+.ret-sub-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;}
+.ret-sub-card{border:1px solid var(--border);border-top:3px solid var(--border);border-radius:7px;padding:10px 12px;background:#fff;}
+.ret-sub-name{font-family:'Syne',sans-serif;font-weight:700;font-size:12px;}
+.ret-sub-rate{font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:700;margin:3px 0;}
+.ret-sub-meta{font-size:10px;color:var(--text3);}
+
 </style>
 </head>
 <body>
@@ -1009,15 +1033,29 @@ body.customer-mode tr.cust-revealed::before{
 <!-- RETURNS (Goods Return) -->
 <div class="section" id="tab-returns">
   <div class="sec-hdr">
-    <div><div class="sec-title">↩️ Returns</div><div class="sec-sub">Goods Return data from billing — already netted into every other number on this dashboard (units, revenue, per-customer and per-style totals). This tab is the return side on its own. Respects the date/brand filter above.</div></div>
+    <div><div class="sec-title">↩️ Returns</div><div class="sec-sub">Goods Return data from billing — already netted into every other number on this dashboard (units, revenue, per-customer and per-style totals). This tab is the return side on its own, rated against what was actually sold. Respects the date/brand filter above.</div></div>
     <button class="btn btn-outline btn-sm" onclick="exportReturnsCSV()">⬇ Export CSV</button>
   </div>
 
   <div class="filter-row">
     <span class="filter-label">Sort:</span>
     <select id="returns-sort" onchange="renderReturns()">
+      <option value="rate">Return Rate</option>
       <option value="qty">Units Returned</option>
       <option value="rev">Return Value</option>
+    </select>
+    <span class="filter-label">Min units sold:</span>
+    <select id="returns-minvol" onchange="renderReturns()" title="Rows below this many gross units sold are still listed, but greyed and never ranked by rate — one return out of one sale isn't a 100% problem.">
+      <option value="0">0 (all)</option>
+      <option value="10">10</option>
+      <option value="25" selected>25</option>
+      <option value="50">50</option>
+      <option value="100">100</option>
+    </select>
+    <span class="filter-label">Buyers:</span>
+    <select id="returns-view" onchange="renderReturns()">
+      <option value="individual">Individual</option>
+      <option value="clustered">Clustered</option>
     </select>
     <input type="text" class="search-box" id="returns-search" placeholder="Search customer or style…" oninput="renderReturns()">
     <span id="returns-count-label" style="font-size:11px;color:var(--text3);font-family:'IBM Plex Mono',monospace"></span>
@@ -1025,17 +1063,22 @@ body.customer-mode tr.cust-revealed::before{
 
   <div class="kpi-grid" id="returns-kpi-grid" style="margin-bottom:14px"></div>
 
+  <div class="card-wide" id="returns-sub-card" style="display:none">
+    <div class="card-title" style="margin-bottom:12px">Return Rate by Sub Cut</div>
+    <div class="ret-sub-grid" id="returns-sub-grid"></div>
+  </div>
+
   <div class="cards-grid">
     <div class="card" style="padding:0;overflow:hidden">
-      <div class="card-title" style="padding:14px 16px 0">By Customer</div>
+      <div class="card-title" style="padding:14px 16px 0">By Customer <span style="font-weight:400;color:var(--text3);font-size:10px">— click a row for their returned styles</span></div>
       <table class="data-table"><thead><tr>
-        <th>#</th><th>Customer</th><th style="text-align:right">Units</th><th style="text-align:right">Value</th><th style="text-align:center">Styles</th>
+        <th>#</th><th>Customer</th><th style="text-align:right">Returned</th><th style="text-align:right">Value</th><th style="text-align:right">Sold</th><th style="text-align:right">Rate</th><th style="text-align:center">Styles</th>
       </tr></thead><tbody id="returns-cust-tbody"></tbody></table>
     </div>
     <div class="card" style="padding:0;overflow:hidden">
-      <div class="card-title" style="padding:14px 16px 0">By Style</div>
+      <div class="card-title" style="padding:14px 16px 0">By Style <span style="font-weight:400;color:var(--text3);font-size:10px">— click a row for who returned it</span></div>
       <table class="data-table"><thead><tr>
-        <th>#</th><th>Style</th><th style="text-align:right">Units</th><th style="text-align:right">Value</th><th style="text-align:center">Customers</th>
+        <th>#</th><th>Style</th><th style="text-align:right">Returned</th><th style="text-align:right">Value</th><th style="text-align:right">Sold</th><th style="text-align:right">Rate</th><th style="text-align:center">Buyers</th>
       </tr></thead><tbody id="returns-style-tbody"></tbody></table>
     </div>
   </div>
@@ -2528,84 +2571,325 @@ function exportReorderCSV() {
 function currentReturnsRows() {
   return FILTERED_RETURNS.length < (D.returns_raw||[]).length ? FILTERED_RETURNS : (D.returns_raw||[]);
 }
+function currentSalesRows() {
+  return FILTERED_RAW.length < D.raw.length ? FILTERED_RAW : D.raw;
+}
 
-/** {byCustomer, byStyle, totalQty, totalRev}, search-filtered. Shared by the
- *  render function and the CSV export so they can never disagree. */
-function returnsBreakdown(search) {
-  const byCust = {}, byStyle = {};
+/** Clustered view maps a buyer to their cluster name; individual view is identity.
+ *  Used on BOTH the returns side and the gross side so a rate never divides a
+ *  cluster's returns by one member's sales. */
+function retViewMode() {
+  return document.getElementById('returns-view')?.value || 'individual';
+}
+function retCustKeyFn() {
+  if (retViewMode() !== 'clustered') return (n) => n;
+  const m = D.cluster_membership || {};
+  return (n) => m[n] || n;
+}
+/** Safe literal for a single-quoted JS string inside a double-quoted attribute. */
+function retKey(s) {
+  return esc(String(s)).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+/** Gross (pre-return) units sold per customer / style / sub cut / customer+style,
+ *  over the same filtered sales rows. These are the denominators for every rate
+ *  on this tab. Cached on the _FA object so it dies with the filter that built
+ *  it — applyGlobalFilter() clears _FA, which clears this for free. */
+function returnsGross() {
+  const fa = getFA();
+  const view = retViewMode();
+  if (fa._retGross && fa._retGross.view === view) return fa._retGross;
+  const keyOf = retCustKeyFn();
+  const cust = {}, style = {}, sub = {}, pair = {};
+  let total = 0;
+  for (const r of currentSalesRows()) {
+    if (!r.c || !r.sn) continue;
+    const ck = keyOf(r.c);
+    total += r.q;
+    cust[ck] = (cust[ck] || 0) + r.q;
+    style[r.sn] = (style[r.sn] || 0) + r.q;
+    if (r.sc) sub[r.sc] = (sub[r.sc] || 0) + r.q;
+    const pk = ck + ' ' + r.sn;
+    pair[pk] = (pair[pk] || 0) + r.q;
+  }
+  fa._retGross = { view, cust, style, sub, pair, total };
+  return fa._retGross;
+}
+
+/** Returned units as a share of everything dispatched — the denominator is
+ *  sold + returned, not sold alone, because a returned unit was still shipped.
+ *  Returns null when nothing was dispatched at all (rate is undefined, not 0). */
+function retRate(ret, gross) {
+  const denom = gross + ret;
+  return denom > 0 ? (ret / denom) * 100 : null;
+}
+function retRateColor(rate) {
+  if (rate === null) return 'var(--text3)';
+  if (rate >= 5) return '#c0392b';
+  if (rate >= 2) return '#b5622a';
+  return '#2a8a72';
+}
+/** Rate cell: number + a bar capped at 20%, so the common 0–5% band is still
+ *  readable instead of every row rendering as a stub. `thin` greys a row whose
+ *  sales volume is under the min-units guard — shown, but not to be trusted. */
+function retRateCell(rate, thin) {
+  if (rate === null) return `<td class="num"><span class="ret-rate-n ret-thin">—</span></td>`;
+  const col = thin ? 'var(--text3)' : retRateColor(rate);
+  const w = Math.min(100, (rate / 20) * 100);
+  return `<td class="num"><span class="ret-rate">
+    <span class="ret-rate-n${thin ? ' ret-thin' : ''}" style="color:${col}">${rate.toFixed(1)}%</span>
+    <span class="ret-rate-bar"><i style="width:${w.toFixed(0)}%;background:${col}"></i></span>
+  </span></td>`;
+}
+
+/** Everything the tab and the CSV read from, computed once per render so the two
+ *  can never disagree: per-customer, per-style and per-sub-cut returns with their
+ *  matched gross, plus the customer↔style cross-tables the drill-downs expand. */
+function returnsAnalysis(search) {
+  const g = returnsGross();
+  const keyOf = retCustKeyFn();
+  const byCust = {}, byStyle = {}, bySub = {};
+  const custStyles = {};   // custKey -> {sn -> {qty,rev}}
+  const styleCusts = {};   // sn -> {custKey -> {qty,rev}}
   let totalQty = 0, totalRev = 0;
+
   for (const r of currentReturnsRows()) {
     if (!r.c || !r.sn) continue;
-    if (search && !r.c.toLowerCase().includes(search) && !String(r.sn).toLowerCase().includes(search)) continue;
+    const ck = keyOf(r.c);
+    if (search && !ck.toLowerCase().includes(search) && !r.c.toLowerCase().includes(search)
+        && !String(r.sn).toLowerCase().includes(search)) continue;
     const rev = r.q * r.p;
     totalQty += r.q; totalRev += rev;
-    if (!byCust[r.c]) byCust[r.c] = { qty:0, rev:0, styles:new Set() };
-    byCust[r.c].qty += r.q; byCust[r.c].rev += rev; byCust[r.c].styles.add(r.sn);
+
+    if (!byCust[ck]) byCust[ck] = { qty:0, rev:0, styles:new Set() };
+    byCust[ck].qty += r.q; byCust[ck].rev += rev; byCust[ck].styles.add(r.sn);
+
     if (!byStyle[r.sn]) byStyle[r.sn] = { qty:0, rev:0, sc:r.sc, custs:new Set() };
-    byStyle[r.sn].qty += r.q; byStyle[r.sn].rev += rev; byStyle[r.sn].custs.add(r.c);
+    byStyle[r.sn].qty += r.q; byStyle[r.sn].rev += rev; byStyle[r.sn].custs.add(ck);
+
+    if (r.sc) {
+      if (!bySub[r.sc]) bySub[r.sc] = { qty:0, rev:0, styles:new Set() };
+      bySub[r.sc].qty += r.q; bySub[r.sc].rev += rev; bySub[r.sc].styles.add(r.sn);
+    }
+
+    (custStyles[ck] = custStyles[ck] || {});
+    const cs = custStyles[ck][r.sn] = custStyles[ck][r.sn] || { qty:0, rev:0, sc:r.sc };
+    cs.qty += r.q; cs.rev += rev;
+
+    (styleCusts[r.sn] = styleCusts[r.sn] || {});
+    const sc2 = styleCusts[r.sn][ck] = styleCusts[r.sn][ck] || { qty:0, rev:0 };
+    sc2.qty += r.q; sc2.rev += rev;
   }
-  return { byCust, byStyle, totalQty, totalRev };
+
+  const custRows = Object.entries(byCust).map(([name,v]) => ({
+    name, qty:v.qty, rev:v.rev, styles:v.styles.size,
+    gross: g.cust[name] || 0, rate: retRate(v.qty, g.cust[name] || 0),
+  }));
+  const styleRows = Object.entries(byStyle).map(([sn,v]) => ({
+    n:sn, sc:v.sc, qty:v.qty, rev:v.rev, custs:v.custs.size,
+    gross: g.style[sn] || 0, rate: retRate(v.qty, g.style[sn] || 0),
+  }));
+  const subRows = Object.entries(bySub).map(([sc,v]) => ({
+    name:sc, qty:v.qty, rev:v.rev, styles:v.styles.size,
+    gross: g.sub[sc] || 0, rate: retRate(v.qty, g.sub[sc] || 0),
+  })).sort((a,b) => (b.rate||0) - (a.rate||0));
+
+  return { custRows, styleRows, subRows, custStyles, styleCusts,
+           totalQty, totalRev, grossTotal: g.total, pair: g.pair };
+}
+
+/** Sort comparator. Rate sort pushes rows under the min-volume guard to the
+ *  bottom rather than hiding them — a 1-of-1 return is real, just not a signal. */
+function retSorter(sortBy, minVol) {
+  if (sortBy === 'rev') return (a,b) => b.rev - a.rev;
+  if (sortBy === 'qty') return (a,b) => b.qty - a.qty;
+  return (a,b) => {
+    const at = a.gross < minVol, bt = b.gross < minVol;
+    if (at !== bt) return at ? 1 : -1;
+    return (b.rate === null ? -1 : b.rate) - (a.rate === null ? -1 : a.rate);
+  };
 }
 
 function renderReturns() {
   const search = document.getElementById('returns-search').value.trim().toLowerCase();
   const sortBy = document.getElementById('returns-sort').value;
-  const { byCust, byStyle, totalQty, totalRev } = returnsBreakdown(search);
-
-  const custCount = Object.keys(byCust).length, styleCount = Object.keys(byStyle).length;
-  document.getElementById('returns-count-label').textContent = currentReturnsRows().length
-    ? `${custCount} customers · ${styleCount} styles`
-    : '';
+  const minVol = +document.getElementById('returns-minvol').value || 0;
+  const clustered = document.getElementById('returns-view').value === 'clustered';
 
   if (!currentReturnsRows().length) {
     const configured = !!(D.returns_raw && D.returns_raw.length);
     document.getElementById('returns-kpi-grid').innerHTML = '';
+    document.getElementById('returns-sub-card').style.display = 'none';
+    document.getElementById('returns-count-label').textContent = '';
     document.getElementById('returns-cust-tbody').innerHTML =
-      `<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text3)">${configured ? 'No returns match the current filter.' : 'No Goods Return data — GOOGLE_RETURNS_RANGE may not be configured.'}</td></tr>`;
+      `<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--text3)">${configured ? 'No returns match the current filter.' : 'No Goods Return data — GOOGLE_RETURNS_RANGE may not be configured.'}</td></tr>`;
     document.getElementById('returns-style-tbody').innerHTML = '';
     return;
   }
 
-  // Return rate: returned units as a share of gross (pre-return) units in the
-  // same filtered window — the honest denominator is sold+returned, not just
-  // sold, since a returned unit was still dispatched.
-  const grossQty = (FILTERED_RAW.length < D.raw.length ? FILTERED_RAW : D.raw).reduce((s,r)=>s+r.q, 0);
-  const rate = (grossQty + totalQty) > 0 ? (totalQty / (grossQty + totalQty)) * 100 : 0;
+  const A = returnsAnalysis(search);
+  window._retA = A;   // drill handlers read this — never JSON in an onclick
+
+  const custCount = A.custRows.length, styleCount = A.styleRows.length;
+  document.getElementById('returns-count-label').textContent =
+    `${custCount} ${clustered ? 'buyer groups' : 'customers'} · ${styleCount} styles`
+    + (search ? ' matching — KPIs below stay whole-book' : '');
+
+  // Headline rate uses unsearched returns over unsearched gross — a searched
+  // numerator over a full denominator would be a meaningless number. The search
+  // box narrows the tables below; the KPI stays the whole filtered book and says
+  // so. Per-row rates are unaffected: each divides by its own key's gross.
+  const T = search ? returnsAnalysis('') : A;
+  const rate = retRate(T.totalQty, T.grossTotal);
+  // Worst style with enough volume behind it to mean something — the single
+  // most actionable line on this tab, so it gets a KPI rather than a table row.
+  const worst = T.styleRows.filter(s => s.gross >= Math.max(minVol, 1) && s.rate !== null)
+                           .sort((a,b) => b.rate - a.rate)[0];
 
   document.getElementById('returns-kpi-grid').innerHTML = `
-    <div class="kpi-card" style="--ac:#c0392b"><div class="kpi-label">Units Returned</div><div class="kpi-value">${fN(totalQty)}</div><div class="kpi-sub">${custCount} customers</div></div>
-    <div class="kpi-card" style="--ac:#b5622a"><div class="kpi-label">Return Value</div><div class="kpi-value">${fmt(totalRev)}</div><div class="kpi-sub">at billed price</div></div>
-    <div class="kpi-card" style="--ac:#4a6fa5"><div class="kpi-label">Return Rate</div><div class="kpi-value">${rate.toFixed(1)}%</div><div class="kpi-sub">of gross units dispatched, same filter</div></div>
-    <div class="kpi-card" style="--ac:#2a8a72"><div class="kpi-label">Styles Affected</div><div class="kpi-value">${styleCount}</div><div class="kpi-sub">distinct styles returned</div></div>`;
+    <div class="kpi-card" style="--ac:#c0392b"><div class="kpi-label">Units Returned</div><div class="kpi-value">${fN(T.totalQty)}</div><div class="kpi-sub">${T.custRows.length} ${clustered ? 'buyer groups' : 'customers'} · ${T.styleRows.length} styles</div></div>
+    <div class="kpi-card" style="--ac:#b5622a"><div class="kpi-label">Return Value</div><div class="kpi-value">${fmt(T.totalRev)}</div><div class="kpi-sub">at billed price</div></div>
+    <div class="kpi-card" style="--ac:#4a6fa5"><div class="kpi-label">Return Rate</div><div class="kpi-value">${rate === null ? '—' : rate.toFixed(1)+'%'}</div><div class="kpi-sub">of all units dispatched, same filter</div></div>
+    <div class="kpi-card" style="--ac:${worst ? retRateColor(worst.rate) : '#2a8a72'}"><div class="kpi-label">Worst Style</div><div class="kpi-value">${worst ? worst.rate.toFixed(1)+'%' : '—'}</div><div class="kpi-sub">${worst ? `#${esc(worst.n)} · ${fN(worst.qty)} of ${fN(worst.gross + worst.qty)} back` : `no style over ${minVol} units sold`}</div></div>`;
 
-  const custRows = Object.entries(byCust).map(([c,v]) => ({ name:c, qty:v.qty, rev:v.rev, styles:v.styles.size }));
-  custRows.sort((a,b) => sortBy === 'rev' ? b.rev - a.rev : b.qty - a.qty);
-  document.getElementById('returns-cust-tbody').innerHTML = custRows.map((c,i) => `<tr>
-    <td>${rn(i)}</td>
-    <td style="font-weight:500">${buyerLabel(c.name, i)}</td>
-    <td class="num"><strong>${fN(c.qty)}</strong></td>
-    <td class="num">${fmt(c.rev)}</td>
-    <td style="text-align:center;font-family:'IBM Plex Mono',monospace">${c.styles}</td>
-  </tr>`).join('');
+  // ── Sub cut rates ──
+  const subCard = document.getElementById('returns-sub-card');
+  const subs = A.subRows;
+  subCard.style.display = subs.length ? '' : 'none';
+  document.getElementById('returns-sub-grid').innerHTML = subs.map(s => {
+    const col = s.gross < minVol ? 'var(--text3)' : retRateColor(s.rate);
+    return `<div class="ret-sub-card" style="border-top-color:${scColor(s.name)}">
+      <div class="ret-sub-name" style="color:${scColor(s.name)}">${esc(s.name)}</div>
+      <div class="ret-sub-rate" style="color:${col}">${s.rate === null ? '—' : s.rate.toFixed(1)+'%'}</div>
+      <div class="ret-sub-meta">${fN(s.qty)} back of ${fN(s.gross + s.qty)} sent · ${s.styles} styles</div>
+    </div>`;
+  }).join('');
 
-  const styleRows = Object.entries(byStyle).map(([sn,v]) => ({ n:sn, sc:v.sc, qty:v.qty, rev:v.rev, custs:v.custs.size }));
-  styleRows.sort((a,b) => sortBy === 'rev' ? b.rev - a.rev : b.qty - a.qty);
-  document.getElementById('returns-style-tbody').innerHTML = styleRows.map((s,i) => `<tr>
-    <td>${rn(i)}</td>
-    <td><strong style="font-family:'IBM Plex Mono',monospace;color:${scColor(s.sc)}">#${esc(s.n)}</strong>${BRAND_FILTER==='all'?brandBadge(s.n):''}</td>
-    <td class="num"><strong>${fN(s.qty)}</strong></td>
-    <td class="num">${fmt(s.rev)}</td>
-    <td style="text-align:center;font-family:'IBM Plex Mono',monospace">${s.custs}</td>
-  </tr>`).join('');
+  // ── By customer ──
+  const custRows = [...A.custRows].sort(retSorter(sortBy, minVol));
+  document.getElementById('returns-cust-tbody').innerHTML = custRows.map((c,i) => {
+    const thin = c.gross < minVol;
+    return `<tr class="ret-row" onclick="toggleReturnsCustDrill('${retKey(c.name)}',this)">
+      <td>${rn(i)}</td>
+      <td style="font-weight:500"><span class="ret-arrow">▶</span>${buyerLabel(c.name, i)}${clustered && (D.clustered_drill||{})[c.name] ? ' <span style="font-size:9px;color:var(--text3)">◈ group</span>' : ''}</td>
+      <td class="num"><strong>${fN(c.qty)}</strong></td>
+      <td class="num">${fmt(c.rev)}</td>
+      <td class="num" style="color:var(--text3)">${fN(c.gross)}</td>
+      ${retRateCell(c.rate, thin)}
+      <td style="text-align:center;font-family:'IBM Plex Mono',monospace">${c.styles}</td>
+    </tr>`;
+  }).join('');
+
+  // ── By style ──
+  const styleRows = [...A.styleRows].sort(retSorter(sortBy, minVol));
+  document.getElementById('returns-style-tbody').innerHTML = styleRows.map((s,i) => {
+    const thin = s.gross < minVol;
+    return `<tr class="ret-row" onclick="toggleReturnsStyleDrill('${retKey(s.n)}',this)">
+      <td>${rn(i)}</td>
+      <td><span class="ret-arrow">▶</span>${designThumb(s.n,'sm')}
+        <strong style="font-family:'IBM Plex Mono',monospace;color:${scColor(s.sc)};vertical-align:middle">#${esc(s.n)}</strong>${BRAND_FILTER==='all'?brandBadge(s.n):''}</td>
+      <td class="num"><strong>${fN(s.qty)}</strong></td>
+      <td class="num">${fmt(s.rev)}</td>
+      <td class="num" style="color:var(--text3)">${fN(s.gross)}</td>
+      ${retRateCell(s.rate, thin)}
+      <td style="text-align:center;font-family:'IBM Plex Mono',monospace">${s.custs}</td>
+    </tr>`;
+  }).join('');
+}
+
+/** Collapse whichever drill row is open under this row's table, and report
+ *  whether the click was on the row that was already open (i.e. a close). */
+function retCloseDrill(rowEl) {
+  const tbody = rowEl.parentNode;
+  const open = tbody.querySelector('tr.ret-drill');
+  const wasThis = open && open.previousElementSibling === rowEl;
+  if (open) open.remove();
+  tbody.querySelectorAll('tr.ret-row.open').forEach(tr => {
+    tr.classList.remove('open');
+    const a = tr.querySelector('.ret-arrow'); if (a) a.textContent = '▶';
+  });
+  return wasThis;
+}
+function retOpenDrill(rowEl, cols, html) {
+  rowEl.classList.add('open');
+  const a = rowEl.querySelector('.ret-arrow'); if (a) a.textContent = '▼';
+  const tr = document.createElement('tr');
+  tr.className = 'ret-drill';
+  tr.innerHTML = `<td colspan="${cols}">${html}</td>`;
+  rowEl.parentNode.insertBefore(tr, rowEl.nextSibling);
+}
+
+/** Which styles this buyer sent back, each against what they personally bought
+ *  of it — a customer-specific rate, not the style's global one. */
+function toggleReturnsCustDrill(custName, rowEl) {
+  // Same lock gate as the Customers tab: a redacted buyer's breakdown stays shut.
+  if (LOCK_MODE === 'locked' || (LOCK_MODE === 'customer' && custName !== UNLOCKED_CUSTOMER)) {
+    requestCustomerUnlock(custName);
+    return;
+  }
+  if (retCloseDrill(rowEl)) return;
+  const A = window._retA; if (!A) return;
+  const styles = Object.entries(A.custStyles[custName] || {})
+    .map(([sn,v]) => ({ n:sn, ...v, gross: A.pair[custName + ' ' + sn] || 0 }))
+    .map(s => ({ ...s, rate: retRate(s.qty, s.gross) }))
+    .sort((a,b) => b.qty - a.qty);
+  if (!styles.length) return;
+
+  const html = `<table><thead><tr>
+      <th>Style</th><th style="text-align:right">Returned</th><th style="text-align:right">Value</th>
+      <th style="text-align:right">They bought</th><th style="text-align:right">Their rate</th></tr></thead>
+    <tbody>${styles.map(s => `<tr>
+      <td class="dc">${designThumb(s.n,'sm')} <strong style="font-family:'IBM Plex Mono',monospace;color:${scColor(s.sc)};vertical-align:middle">#${esc(s.n)}</strong>
+        <span style="color:var(--text3);font-size:10px">${esc(s.sc||'')}</span></td>
+      <td class="dc num"><strong>${fN(s.qty)}</strong></td>
+      <td class="dc num">${fmt(s.rev)}</td>
+      <td class="dc num" style="color:var(--text3)">${fN(s.gross)}</td>
+      <td class="dc num" style="font-family:'IBM Plex Mono',monospace;font-weight:700;color:${retRateColor(s.rate)}">${s.rate === null ? '—' : s.rate.toFixed(1)+'%'}</td>
+    </tr>`).join('')}</tbody></table>`;
+  retOpenDrill(rowEl, 7, html);
+}
+
+/** Who sent this style back, and whether it's one unhappy account or everyone. */
+function toggleReturnsStyleDrill(sn, rowEl) {
+  if (retCloseDrill(rowEl)) return;
+  const A = window._retA; if (!A) return;
+  const custs = Object.entries(A.styleCusts[sn] || {})
+    .map(([c,v]) => ({ name:c, ...v, gross: A.pair[c + ' ' + sn] || 0 }))
+    .map(c => ({ ...c, rate: retRate(c.qty, c.gross) }))
+    .sort((a,b) => b.qty - a.qty);
+  if (!custs.length) return;
+
+  const st = A.styleRows.find(s => String(s.n) === String(sn));
+  const concentration = st && st.qty > 0 ? ((custs[0].qty / st.qty) * 100).toFixed(0) : 0;
+  const read = custs.length === 1
+    ? '⚠️ One account only — likely an order/fit issue with that buyer, not the garment'
+    : (concentration >= 70
+        ? `◆ ${concentration}% of the returns come from a single account — check that relationship before the style`
+        : '🔴 Spread across multiple buyers — points at the garment itself');
+
+  const html = `<div style="font-size:11px;color:var(--text2);margin:8px 0 4px">${read}</div>
+    <table><thead><tr>
+      <th>Customer</th><th style="text-align:right">Returned</th><th style="text-align:right">Value</th>
+      <th style="text-align:right">They bought</th><th style="text-align:right">Their rate</th></tr></thead>
+    <tbody>${custs.map((c,i) => `<tr>
+      <td class="dc" style="font-weight:500">${buyerLabel(c.name, i)}</td>
+      <td class="dc num"><strong>${fN(c.qty)}</strong></td>
+      <td class="dc num">${fmt(c.rev)}</td>
+      <td class="dc num" style="color:var(--text3)">${fN(c.gross)}</td>
+      <td class="dc num" style="font-family:'IBM Plex Mono',monospace;font-weight:700;color:${retRateColor(c.rate)}">${c.rate === null ? '—' : c.rate.toFixed(1)+'%'}</td>
+    </tr>`).join('')}</tbody></table>`;
+  retOpenDrill(rowEl, 7, html);
 }
 
 function exportReturnsCSV() {
   const search = document.getElementById('returns-search').value.trim().toLowerCase();
-  const tag = BRAND_FILTER!=='all' ? '_'+BRAND_FILTER : '';
-  let c = 'Type,Key,Units,Value INR,Distinct Other Side\n';
-  const { byCust, byStyle } = returnsBreakdown(search);
-  Object.entries(byCust).forEach(([name,v]) => { c += `Customer,${csvCell(name)},${v.qty},${Math.round(v.rev)},${v.styles.size}\n`; });
-  Object.entries(byStyle).forEach(([sn,v]) => { c += `Style,${csvCell(sn)},${v.qty},${Math.round(v.rev)},${v.custs.size}\n`; });
+  const tag = BRAND_FILTER !== 'all' ? '_' + BRAND_FILTER : '';
+  const A = returnsAnalysis(search);
+  const pct = r => r === null ? '' : r.toFixed(2);
+  let c = 'Type,Key,Sub Cut,Units Returned,Return Value INR,Units Sold,Return Rate %,Distinct Other Side\n';
+  A.custRows.forEach(v => { c += `Customer,${csvCell(v.name)},,${v.qty},${Math.round(v.rev)},${v.gross},${pct(v.rate)},${v.styles}\n`; });
+  A.styleRows.forEach(v => { c += `Style,${csvCell(v.n)},${csvCell(v.sc||'')},${v.qty},${Math.round(v.rev)},${v.gross},${pct(v.rate)},${v.custs}\n`; });
+  A.subRows.forEach(v => { c += `Sub Cut,${csvCell(v.name)},,${v.qty},${Math.round(v.rev)},${v.gross},${pct(v.rate)},${v.styles}\n`; });
   dl(c, `Returns${tag}.csv`);
 }
 

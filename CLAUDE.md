@@ -467,13 +467,49 @@ activity), and **Reorder Radar's cadence math** (`reorderRadarRows()` only
 ever reads `D.raw` — no code changes were needed there, it's naturally
 unaffected).
 
-New **Returns tab** (`renderReturns()`, `returnsBreakdown()`,
-`exportReturnsCSV()`): by-customer and by-style totals plus a return-rate KPI
-(returned ÷ (gross sold + returned) in the current filter). Unlike Reorder
-Radar, this tab respects the date filter — there's no cadence math here that
-narrowing the window would break. `GOODS_RETURN` has no reason/cause column,
-so there's no by-reason breakdown; don't add one without a real column to
-back it.
+**Returns tab** (`renderReturns()`, `returnsAnalysis()`, `returnsGross()`,
+`exportReturnsCSV()`). Unlike Reorder Radar, this tab respects the date filter
+— there's no cadence math here that narrowing the window would break.
+`GOODS_RETURN` has no reason/cause column, so there's no by-reason breakdown;
+don't add one without a real column to back it.
+
+Everything on it is **rate-first**, not volume-first: absolute returned units
+just rank whatever sells most, so every row (customer, style, sub cut, and
+both drill-downs) carries `returned ÷ (gross sold + returned)` against its
+*own* matched denominator. `returnsGross()` builds those denominators —
+per-customer, per-style, per-sub-cut and per customer+style pair — from the
+same filtered sales rows, cached on the `_FA` object so `applyGlobalFilter()`
+clearing `_FA` invalidates it for free. `retRate()` returns **null**, not 0,
+when nothing was dispatched (undefined ≠ zero), and every display path renders
+that as "—".
+
+Three things that are deliberate and easy to undo by accident:
+
+- **The min-units guard** (`returns-minvol`, default 25) never *hides* a row —
+  rate sorting demotes sub-threshold rows to the bottom and greys them. One
+  return out of one sale is real, just not a signal.
+- **Clustered view maps both sides of the ratio.** `retCustKeyFn()` is applied
+  in `returnsGross()` and `returnsAnalysis()` alike, so a cluster's returns are
+  never divided by one member's sales.
+- **KPIs ignore the search box; tables obey it.** A searched numerator over a
+  full denominator is a meaningless rate, so `renderReturns()` recomputes an
+  unsearched `T` for the four KPI cards and labels the row count as matching.
+  Per-row rates are unaffected — each divides by its own key's gross.
+
+Drill-downs are inline expanding rows (`retOpenDrill()` / `retCloseDrill()`),
+not the Customers tab's drill panel: a customer row expands to their returned
+styles with **their own** rate on each, a style row expands to who sent it back
+plus a concentration read (one account vs. spread across buyers — the latter
+points at the garment, the former at the relationship). Customer drills go
+through the same lock gate as `handleCustClick()`; names always render via
+`buyerLabel()`. Style rows and drills carry `designThumb()` so a quality
+problem is visible.
+
+Checked and deliberately **not** built: return **lag** (`GOODS_RETURN` has no
+link back to the original bill, so any dispatch→return gap would be an inferred
+match against the customer's most recent sale of that style, not a fact) and a
+monthly returns **trend**. Both are reasonable next additions; neither is
+implemented.
 
 **Void/cancellation rows are dropped before anything else touches them.**
 Found while investigating a report of "26k pieces sold" under an unexplained
