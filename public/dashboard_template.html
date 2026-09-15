@@ -316,6 +316,8 @@ select:focus,input:focus{outline:none;border-color:var(--accent);}
 body.locked .kpi-value,
 body.locked .kpi-sub,
 body.locked .trend-chart,
+body.locked .cmp-kpi-rows,
+body.locked #tab-overview .cmp-mini-v,
 body.locked .bar-track,
 body.locked .bar-val,
 body.locked #ov-cust .bar-name,
@@ -742,6 +744,76 @@ body.customer-mode tr.cust-revealed::before{
 .ret-sub-rate{font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:700;margin:3px 0;}
 .ret-sub-meta{font-size:10px;color:var(--text3);}
 
+/* ── Overview bar+line chart ─────────────────────────────────────
+   Plain HTML bars (not a scaled SVG) so labels never stretch; the revenue
+   line is the only SVG, drawn in a 0–100 box with non-scaling stroke. */
+.bl-chart{height:auto!important;}
+.bl-legend{display:flex;gap:14px;font-size:10px;color:var(--text3);font-family:'IBM Plex Mono',monospace;margin-bottom:6px;flex-wrap:wrap;}
+.bl-legend .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px;}
+.bl-legend .sw.line{height:2px;vertical-align:3px;background:#2a3a4a;}
+.bl-plot{position:relative;height:170px;margin:0 46px 0 34px;border-bottom:1px solid var(--border);}
+.bl-grid{position:absolute;left:0;right:0;border-top:1px dashed #ebe6df;}
+.bl-yl,.bl-yr{position:absolute;top:-7px;font-size:9px;color:#9c978e;font-family:'IBM Plex Mono',monospace;white-space:nowrap;}
+.bl-yl{right:calc(100% + 5px);}
+.bl-yr{left:calc(100% + 5px);color:#5a6a7a;}
+.bl-cols{position:absolute;inset:0;display:flex;align-items:flex-end;}
+.bl-col{flex:1;height:100%;display:flex;align-items:flex-end;justify-content:center;padding:0 1px;cursor:crosshair;}
+.bl-col:hover{background:rgba(181,98,42,.06);}
+.bl-bar{width:100%;max-width:26px;height:0;background:#e3b596;border-radius:2px 2px 0 0;
+  transition:height .6s cubic-bezier(.2,.8,.2,1);}
+.bl-bar.peak{background:var(--accent);}
+.bl-col:hover .bl-bar{filter:brightness(.9);}
+.bl-grp{display:flex;align-items:flex-end;gap:1px;width:100%;height:100%;justify-content:center;}
+.bl-grp .bl-bar{max-width:14px;}
+.bl-line{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;opacity:0;transition:opacity .5s;}
+.bl-line polyline{fill:none;stroke:#2a3a4a;stroke-width:2;stroke-linejoin:round;vector-effect:non-scaling-stroke;}
+.bl-dot{position:absolute;width:5px;height:5px;margin:0 0 -2.5px -2.5px;border-radius:50%;background:#2a3a4a;pointer-events:none;opacity:0;transition:opacity .5s;}
+.bl-line.shown,.bl-dot.shown{opacity:1;}
+.bl-xaxis{position:relative;height:16px;margin:0 46px 0 34px;}
+.bl-xl{position:absolute;top:3px;transform:translateX(-50%);font-size:9px;color:#9c978e;font-family:'IBM Plex Mono',monospace;white-space:nowrap;}
+.bl-tip{position:absolute;top:4px;transform:translateX(-50%);background:#2a2520;color:#fff;border-radius:6px;padding:6px 9px;
+  font-size:11px;font-family:'IBM Plex Mono',monospace;white-space:nowrap;pointer-events:none;z-index:5;box-shadow:0 4px 14px rgba(0,0,0,.18);}
+.bl-tip b{font-family:'Syne',sans-serif;}
+.bl-tip .r{display:flex;justify-content:space-between;gap:12px;}
+.bl-empty{padding:40px 0;text-align:center;color:var(--text3);font-size:12px;}
+#tab-overview .bar-fill{transition:width .6s cubic-bezier(.2,.8,.2,1);}
+@media (prefers-reduced-motion: reduce){.bl-bar,#tab-overview .bar-fill,.bl-line,.bl-dot{transition:none!important;}}
+
+/* ── Compare mode ───────────────────────────────────────────────── */
+.cmp-btn.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+#cmp-bar{background:#fdf9f6;border-bottom:2px solid var(--border);padding:10px 36px;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;}
+.cmp-grp{display:flex;align-items:center;gap:5px;flex-wrap:wrap;}
+.cmp-chip{border:1px solid var(--border);background:#fff;border-radius:14px;padding:3px 10px;font-size:11px;
+  font-family:'IBM Plex Mono',monospace;cursor:pointer;color:var(--text2);}
+.cmp-chip.on{color:#fff;border-color:transparent;}
+.cmp-chip.mo.on{background:var(--accent);}
+.cmp-chip.link{border-style:dashed;}
+.cmp-note{font-size:10.5px;color:var(--text3);flex-basis:100%;}
+.cmp-warn{font-size:11px;color:#8a5a1a;background:#fef3e2;border:1px solid #f0d8b0;border-radius:6px;padding:4px 9px;}
+.cmp-na{display:none;font-size:11.5px;color:#8a5a1a;background:#fef3e2;border:1px solid #f0d8b0;border-radius:7px;padding:7px 12px;margin-bottom:12px;}
+body.cmp-on .cmp-na{display:block;}
+.cmp-kpi-rows{margin-top:4px;}
+.cmp-kpi-row{display:flex;align-items:baseline;gap:8px;padding:2px 0;font-family:'IBM Plex Mono',monospace;font-size:12px;}
+.cmp-kpi-row .cmp-yr{font-weight:700;min-width:44px;font-size:11px;}
+.cmp-kpi-row .cmp-v{font-family:'Syne',sans-serif;font-weight:800;font-size:15px;flex:1;}
+.cmp-d{font-size:10.5px;font-weight:700;white-space:nowrap;min-width:52px;text-align:right;}
+.cmp-d.up{color:#2a8a72;}.cmp-d.down{color:#c0392b;}.cmp-d.flat{color:var(--text3);font-weight:400;}
+.cmp-mini{display:flex;align-items:center;gap:6px;margin-top:3px;}
+.cmp-mini-y{font-family:'IBM Plex Mono',monospace;font-size:9.5px;font-weight:700;min-width:22px;}
+.cmp-mini .bar-track{flex:1;}
+/* Drill-down cards use their own track, not .bar-track: the locked-mode rule
+   hides every .bar-track, which would blank the one customer revealed in
+   customer mode (the normal drill's bars are unclassed for the same reason). */
+.cmp-track{flex:1;background:#f0ede8;border-radius:3px;height:6px;overflow:hidden;}
+.cmp-track > i{display:block;height:100%;border-radius:3px;}
+.cmp-mini-v{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text2);min-width:58px;text-align:right;}
+.cmp-cell{font-family:'IBM Plex Mono',monospace;text-align:right;white-space:nowrap;}
+.cmp-cell strong{font-size:12.5px;}
+.cmp-cell .sub{display:block;font-size:9.5px;color:var(--text3);}
+.cmp-cell .mb{display:block;height:3px;background:#f0ede8;border-radius:2px;margin-top:3px;overflow:hidden;}
+.cmp-cell .mb i{display:block;height:100%;}
+.cmp-cell.zero{color:#c9c2b8;}
+
 </style>
 </head>
 <body>
@@ -861,8 +933,13 @@ body.customer-mode tr.cust-revealed::before{
   <div style="width:1px;height:20px;background:var(--border);margin:0 4px"></div>
 
   <button class="btn btn-outline btn-sm" onclick="clearAllFilters()" style="color:var(--accent4);border-color:var(--accent4)">✕ Clear All</button>
+  <div style="width:1px;height:20px;background:var(--border);margin:0 4px"></div>
+  <button class="btn btn-outline btn-sm cmp-btn" id="cmp-btn" onclick="toggleCompare()" title="Compare years (or chosen months across years) side by side">⇄ Compare</button>
   <span id="global-filter-status" style="font-size:11px;color:var(--accent);font-family:'IBM Plex Mono',monospace;display:none"></span>
 </div>
+
+<!-- ── COMPARE BAR (only while compare mode is on) ── -->
+<div id="cmp-bar" style="display:none"></div>
 
 <main>
 
@@ -870,7 +947,7 @@ body.customer-mode tr.cust-revealed::before{
 <div class="section active" id="tab-overview">
   <div class="kpi-grid" id="kpi-grid"></div>
   <div class="cards-grid">
-    <div class="card"><div class="card-title">📈 Monthly Dispatch Volume</div><div class="trend-chart"><svg class="trend-svg" id="trend-svg" viewBox="0 0 700 180" preserveAspectRatio="none"></svg></div></div>
+    <div class="card"><div class="card-title" id="trend-title">📈 Monthly Dispatch Volume</div><div class="trend-chart bl-chart" id="trend-chart"></div></div>
     <div class="card"><div class="card-title">🏆 Top Sub Cuts by Revenue</div><div id="ov-sc"></div></div>
   </div>
   <div class="cards-grid">
@@ -881,6 +958,7 @@ body.customer-mode tr.cust-revealed::before{
 
 <!-- SUB CUTS -->
 <div class="section" id="tab-subcuts">
+  <div class="cmp-na">⇄ Compare mode doesn't apply to this tab yet — it's showing the normal view for the filter bar's dates. Compare works on Overview, Style Numbers and the Customers drill-down.</div>
   <div class="sec-hdr">
     <div><div class="sec-title">Sub Cut Style Analysis</div><div class="sec-sub">All sub cuts ranked by volume, revenue and reach</div></div>
     <button class="btn btn-outline btn-sm" onclick="exportSubcutsCSV()">⬇ Export CSV</button>
@@ -931,6 +1009,7 @@ body.customer-mode tr.cust-revealed::before{
 
 <!-- CUSTOMERS -->
 <div class="section" id="tab-customers">
+  <div class="cmp-na">⇄ Compare mode: the table below is the normal view — <strong>click a customer</strong> and the drill-down compares them year against year.</div>
   <div class="sec-hdr">
     <div><div class="sec-title">Customer Deep Dive</div><div class="sec-sub">Click a row → sub cuts → style numbers with reorder frequency & global popularity</div></div>
     <button class="btn btn-outline btn-sm" onclick="exportCustomersCSV()">⬇ Export CSV</button>
@@ -997,6 +1076,7 @@ body.customer-mode tr.cust-revealed::before{
 
 <!-- REORDER RADAR -->
 <div class="section" id="tab-reorder">
+  <div class="cmp-na">⇄ Compare mode doesn't apply to this tab — it's showing the normal view. Compare works on Overview, Style Numbers and the Customers drill-down.</div>
   <div class="sec-hdr">
     <div><div class="sec-title">📡 Reorder Radar</div><div class="sec-sub">Who's overdue against their <em>own</em> ordering rhythm — not a generic day count. Uses full order history and today's date; the date range filter above doesn't apply here (brand and the min-history/min-qty controls below do).</div></div>
     <button class="btn btn-outline btn-sm" onclick="exportReorderCSV()">⬇ Export CSV</button>
@@ -1032,6 +1112,7 @@ body.customer-mode tr.cust-revealed::before{
 
 <!-- RETURNS (Goods Return) -->
 <div class="section" id="tab-returns">
+  <div class="cmp-na">⇄ Compare mode doesn't apply to this tab yet — it's showing the normal view for the filter bar's dates. Compare works on Overview, Style Numbers and the Customers drill-down.</div>
   <div class="sec-hdr">
     <div><div class="sec-title">↩️ Returns</div><div class="sec-sub">Goods Return data from billing — already netted into every other number on this dashboard (units, revenue, per-customer and per-style totals). This tab is the return side on its own, rated against what was actually sold. <strong>"Sold (gross)" here is units dispatched before returns are taken off</strong> — it's the denominator the rate is measured against; every other tab shows units net of returns. Respects the date/brand filter above.</div></div>
     <button class="btn btn-outline btn-sm" onclick="exportReturnsCSV()">⬇ Export CSV</button>
@@ -1086,6 +1167,7 @@ body.customer-mode tr.cust-revealed::before{
 
 <!-- CLUSTERS (auto-generated from top customers) -->
 <div class="section" id="tab-clusters">
+  <div class="cmp-na">⇄ Compare mode doesn't apply to this tab — it's showing the normal view. Compare works on Overview, Style Numbers and the Customers drill-down.</div>
   <div class="sec-hdr"><div><div class="sec-title">Customer Buying Clusters</div><div class="sec-sub">Grouped by buying behavior — auto-generated from your data</div></div></div>
   <div class="cl-grid" id="cl-grid"></div>
   <div class="card-wide" style="margin-top:14px">
@@ -1096,6 +1178,7 @@ body.customer-mode tr.cust-revealed::before{
 
 <!-- INSIGHTS -->
 <div class="section" id="tab-insights">
+  <div class="cmp-na">⇄ Compare mode doesn't apply to this tab — it's showing the normal view. Compare works on Overview, Style Numbers and the Customers drill-down.</div>
   <div class="sec-hdr">
     <div><div class="sec-title">Business Intelligence & Action Points</div><div class="sec-sub">~20 AI-generated insights from your actual data</div></div>
     <button class="btn btn-primary" id="ai-gen-btn" onclick="generateAIInsights()">✨ Generate AI Insights</button>
@@ -1684,6 +1767,13 @@ function passesGlobalFilter(r) {
     if (DATE_FROM && ds < DATE_FROM) return false;
     if (DATE_TO   && ds > DATE_TO)   return false;
   }
+  return passesNonDateFilter(r);
+}
+
+/** Every global filter EXCEPT the date range. Compare mode uses this: the
+ *  years/months picked in the compare bar are the dates, so the From/To
+ *  inputs must not also cut the rows, but brand/qty/MRP still apply. */
+function passesNonDateFilter(r) {
   if (r.q < FILTER_MIN_QTY || r.q > FILTER_MAX_QTY) return false;
   if (r.p && (r.p < FILTER_MIN_PRICE || r.p > FILTER_MAX_PRICE)) return false;
   if (BRAND_FILTER !== 'all' && rowBrand(r) !== BRAND_FILTER) return false;
@@ -1736,7 +1826,7 @@ function clearAllFilters() {
 function getFA() {
   if (_FA) return _FA;
   const rows = FILTERED_RAW.length < D.raw.length ? FILTERED_RAW : D.raw;
-  const scA={}, cA={}, stA={}, moA={};
+  const scA={}, cA={}, stA={}, moA={}, moR={};
   let tQ=0, tR=0;
   const MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   for (const r of rows) {
@@ -1750,7 +1840,7 @@ function getFA() {
     stA[r.sn].qty+=r.q; stA[r.sn].rev+=rev; if(r.p>0)stA[r.sn].price=r.p; stA[r.sn].cu.add(r.c);
     if (r.dt) {
       const d=r.dt instanceof Date?r.dt:new Date(r.dt+'T00:00:00');
-      if(!isNaN(d)){const mk=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;moA[mk]=(moA[mk]||0)+r.q;}
+      if(!isNaN(d)){const mk=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;moA[mk]=(moA[mk]||0)+r.q;moR[mk]=(moR[mk]||0)+rev;}
     }
   }
 
@@ -1777,7 +1867,7 @@ function getFA() {
     subcuts: Object.entries(scA).filter(([sc])=>sc).map(([sc,v])=>({name:sc,qty:v.qty,revenue:Math.round(v.rev),customers:v.cu.size,styles:v.st.size})).sort((a,b)=>b.qty-a.qty),
     customers: Object.entries(cA).filter(([c])=>c).map(([c,v])=>({name:c,qty:v.qty,revenue:Math.round(v.rev),sc:[...v.sc],vc:v.st.size})).sort((a,b)=>b.qty-a.qty),
     styles: stA,
-    monthly: Object.entries(moA).sort(([a],[b])=>a<b?-1:1).map(([mk,q])=>{const[yr,mo]=mk.split('-');return{m:`${MN[+mo-1]} ${yr.slice(2)}`,q};}),
+    monthly: Object.entries(moA).sort(([a],[b])=>a<b?-1:1).map(([mk,q])=>{const[yr,mo]=mk.split('-');return{m:`${MN[+mo-1]} ${yr.slice(2)}`,q,r:Math.round(moR[mk]||0)};}),
   };
 
   // Build clustered customers view from the same filtered raw data
@@ -1859,28 +1949,349 @@ function freqBadge(freq) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// TREND CHART
+// BAR + LINE CHART (Overview monthly dispatch)
+// Bars = units dispatched per month, line = revenue on its own right-hand
+// scale. Monthly figures are dispatch activity, so gross of returns — the
+// same rule getFA()'s monthly series has always followed.
 // ══════════════════════════════════════════════════════════════
-function drawTrend(id, data, lc='#b5622a', fc='rgba(181,98,42,0.1)', H=180) {
-  const svg = document.getElementById(id); if (!svg||!data.length) return;
-  const W=700, max=Math.max(...data.map(d=>d.q),1);
-  const pts = data.map((d,i)=>({x:24+(i/(data.length-1||1))*(W-48),y:H-24-(d.q/max)*(H-40),d}));
-  const path = pts.map((p,i)=>i===0?`M${p.x},${p.y}`:`L${p.x},${p.y}`).join(' ');
-  const area = `M${pts[0].x},${H-24} ${pts.map(p=>`L${p.x},${p.y}`).join(' ')} L${pts[pts.length-1].x},${H-24} Z`;
-  const peak = pts.reduce((a,b)=>b.d.q>a.d.q?b:a,pts[0]);
-  let h='';
-  [.25,.5,.75,1].forEach(f=>{const y=H-24-f*(H-40);h+=`<line x1="24" y1="${y}" x2="${W-24}" y2="${y}" stroke="#e8e4de" stroke-width="1"/>`;h+=`<text x="20" y="${y+4}" text-anchor="end" font-size="9" fill="#9c978e" font-family="IBM Plex Mono,monospace">${Math.round(max*f)}</text>`;});
-  h+=`<path d="${area}" fill="${fc}"/><path d="${path}" fill="none" stroke="${lc}" stroke-width="2" stroke-linejoin="round"/>`;
-  pts.forEach((p,i)=>{if(i%4===0||i===pts.length-1)h+=`<circle cx="${p.x}" cy="${p.y}" r="3" fill="${lc}" opacity=".6"/>`;});
-  h+=`<circle cx="${peak.x}" cy="${peak.y}" r="5" fill="${lc}"/><text x="${peak.x}" y="${peak.y-8}" text-anchor="middle" font-size="10" fill="${lc}" font-family="IBM Plex Mono,monospace" font-weight="600">${peak.d.q}</text>`;
-  pts.forEach((p,i)=>{if(i%4===0)h+=`<text x="${p.x}" y="${H-6}" text-anchor="middle" font-size="9" fill="#9c978e" font-family="IBM Plex Mono,monospace">${p.d.m}</text>`;});
-  svg.innerHTML=h;
+function shortN(n){n=Math.round(n);return n>=1e5?(n/1e5).toFixed(1)+'L':n>=1e3?(n/1e3).toFixed(1)+'k':String(n);}
+
+/** Grow bars/fills from zero to their target size, staggered. Used on every
+ *  Overview render and again when the Overview tab is re-opened. */
+function animateGrow(root) {
+  if (!root) return;
+  const els = [...root.querySelectorAll('.bl-bar, .bar-fill')];
+  els.forEach(e => {
+    e.style.transition = 'none';
+    if (e.classList.contains('bl-bar')) e.style.height = '0';
+    else { if (!e.dataset.w) e.dataset.w = e.style.width; e.style.width = '0'; }
+  });
+  const lines = [...root.querySelectorAll('.bl-line, .bl-dot')];
+  lines.forEach(e => e.classList.remove('shown'));
+  void root.offsetWidth;
+  const run = () => {
+    els.forEach((e, i) => {
+      e.style.transition = '';
+      e.style.transitionDelay = Math.min(i * 10, 450) + 'ms';
+      if (e.classList.contains('bl-bar')) e.style.height = e.dataset.h + '%';
+      else e.style.width = e.dataset.w;
+    });
+    setTimeout(() => lines.forEach(e => e.classList.add('shown')), 350);
+  };
+  (typeof requestAnimationFrame === 'function') ? requestAnimationFrame(run) : run();
+}
+
+/** Tooltip wiring shared by both charts: `tipFor(i)` returns the HTML for
+ *  column i; the tip follows the hovered column. */
+function wireChartTip(el, n, tipFor) {
+  const cols = el.querySelector('.bl-cols'), tip = el.querySelector('.bl-tip');
+  if (!cols || !tip) return;
+  cols.onmousemove = ev => {
+    const col = ev.target.closest && ev.target.closest('.bl-col'); if (!col) return;
+    const i = +col.dataset.i;
+    tip.innerHTML = tipFor(i);
+    tip.hidden = false;
+    const pct = ((i + 0.5) / n) * 100;
+    tip.style.left = Math.min(Math.max(pct, 12), 88) + '%';
+  };
+  cols.onmouseleave = () => { tip.hidden = true; };
+}
+
+function drawBarLine(id, data) {
+  const el = document.getElementById(id); if (!el) return;
+  if (!data || !data.length) { el.innerHTML = '<div class="bl-empty">No dated rows in this filter.</div>'; return; }
+  const n = data.length;
+  const maxQ = Math.max(...data.map(d => d.q), 1);
+  const hasR = data.some(d => (d.r || 0) > 0);
+  const maxR = Math.max(...data.map(d => d.r || 0), 1);
+  const peakI = data.reduce((bi, d, i) => d.q > data[bi].q ? i : bi, 0);
+  const x = i => ((i + 0.5) / n) * 100;
+  const yR = v => (Math.max(v, 0) / maxR) * 100;          // % from bottom
+  const step = Math.ceil(n / 12);
+
+  const grid = [.25, .5, .75, 1].map(f => `<div class="bl-grid" style="bottom:${f*100}%"><span class="bl-yl">${shortN(maxQ*f)}</span>${hasR ? `<span class="bl-yr">${fmt(Math.round(maxR*f))}</span>` : ''}</div>`).join('');
+  const cols = data.map((d, i) => `<div class="bl-col" data-i="${i}"><div class="bl-bar${i === peakI ? ' peak' : ''}" data-h="${(Math.max(d.q,0) / maxQ * 100).toFixed(2)}"></div></div>`).join('');
+  const line = hasR
+    ? `<svg class="bl-line" viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points="${data.map((d, i) => `${x(i).toFixed(3)},${(100 - yR(d.r || 0)).toFixed(3)}`).join(' ')}"/></svg>`
+      + data.map((d, i) => `<span class="bl-dot" style="left:${x(i)}%;bottom:${yR(d.r || 0)}%"></span>`).join('')
+    : '';
+  const labels = data.map((d, i) => (i % step === 0 || (i === n - 1 && (n - 1) % step >= step / 2))
+    ? `<span class="bl-xl" style="left:${x(i)}%">${esc(d.m)}</span>` : '').join('');
+
+  el.innerHTML = `<div class="bl-legend"><span><i class="sw" style="background:#e3b596"></i>Units dispatched</span>${hasR ? '<span><i class="sw line"></i>Revenue (right scale)</span>' : ''}<span>Peak: ${esc(data[peakI].m)} · ${fN(data[peakI].q)} pcs</span></div>
+    <div class="bl-plot">${grid}<div class="bl-cols">${cols}</div>${line}<div class="bl-tip" hidden></div></div>
+    <div class="bl-xaxis">${labels}</div>`;
+  wireChartTip(el, n, i => `<b>${esc(data[i].m)}</b><div class="r"><span>Units</span><span>${fN(data[i].q)}</span></div>${hasR ? `<div class="r"><span>Revenue</span><span>${fmt(data[i].r || 0)}</span></div>` : ''}`);
+  animateGrow(el);
+}
+
+// ══════════════════════════════════════════════════════════════
+// COMPARE MODE
+// Years side by side, or chosen months compared across chosen years. The
+// compare bar's picks ARE the dates, so the From/To filter is ignored while
+// it's on; brand / qty / MRP still apply (passesNonDateFilter). Figures are
+// net of Goods Returns like everywhere else; the monthly chart is dispatch
+// (gross), same as the normal chart.
+// ══════════════════════════════════════════════════════════════
+const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+let CMP = { on:false, mode:'years', years:null, months:[] };   // years null = every year in the data
+let _cmpCov = null;
+
+/** year → Set(month numbers that have ANY sales row), over unfiltered data —
+ *  this is "does the data exist", used to flag partial years honestly. */
+function cmpCoverage() {
+  if (_cmpCov && _cmpCov.d === D) return _cmpCov.map;
+  const map = {};
+  for (const r of D.raw) {
+    const ds = rowDateStr(r); if (!ds) continue;
+    (map[ds.slice(0,4)] = map[ds.slice(0,4)] || new Set()).add(+ds.slice(5,7));
+  }
+  _cmpCov = { d:D, map };
+  return map;
+}
+function cmpAllYears() { return Object.keys(cmpCoverage()).sort(); }
+function cmpYears() { const all = cmpAllYears(); return CMP.years ? all.filter(y => CMP.years.includes(y)) : all; }
+function cmpMonths() { return CMP.mode === 'months' ? [...CMP.months].sort((a,b) => a-b) : [1,2,3,4,5,6,7,8,9,10,11,12]; }
+
+/** "Jan–Mar, Jun" from [1,2,3,6]. */
+function monthsLabel(ms) {
+  const s = [...ms].sort((a,b) => a-b), out = [];
+  for (let i = 0; i < s.length; i++) {
+    let j = i; while (j + 1 < s.length && s[j+1] === s[j] + 1) j++;
+    out.push(j > i ? `${MONTHS_SHORT[s[i]-1]}–${MONTHS_SHORT[s[j]-1]}` : MONTHS_SHORT[s[i]-1]);
+    i = j;
+  }
+  return out.join(', ');
+}
+
+/** Stable colour per year: newest = accent, then going back in time. */
+function cmpYearColor(y) {
+  const all = cmpAllYears(), back = all.length - 1 - all.indexOf(y);
+  return ['#b5622a','#2a8a72','#4a6fa5','#7a5195','#c0a062','#8a4a2a','#6a6a2a'][back] || '#9c978e';
+}
+
+function cmpPeriods() {
+  const months = cmpMonths(), cov = cmpCoverage();
+  return cmpYears().map(y => {
+    const have = months.filter(m => cov[y] && cov[y].has(m));
+    return { key:y, label:y, color:cmpYearColor(y), have, partial: have.length < months.length };
+  });
+}
+
+/** Per-period aggregates, net of returns. Cached on the _FA object so any
+ *  filter change (which clears _FA) invalidates it; keyed on the picks. */
+function getCMP() {
+  const fa = getFA();
+  const base = cmpPeriods(), months = cmpMonths();
+  const key = JSON.stringify([base.map(p => p.key), months]);
+  if (fa._cmp && fa._cmp.key === key) return fa._cmp;
+
+  const idx = {}; base.forEach((p, i) => { idx[p.key] = i; });
+  const mset = new Set(months);
+  const P = base.map(p => ({ ...p, qty:0, rev:0, cust:new Set(), styles:{}, subcuts:{}, customers:{}, monthly:{}, custSub:{} }));
+  const locate = r => {
+    const ds = rowDateStr(r); if (!ds) return null;
+    const i = idx[ds.slice(0,4)]; if (i === undefined) return null;
+    const m = +ds.slice(5,7); if (!mset.has(m)) return null;
+    return { p:P[i], m };
+  };
+  const bump = (p, r, sign, L) => {
+    const q = sign * r.q, rev = sign * r.q * r.p;
+    p.qty += q; p.rev += rev;
+    const st = p.styles[r.sn] = p.styles[r.sn] || { qty:0, rev:0, sc:r.sc, cu:new Set() };
+    st.qty += q; st.rev += rev;
+    const sc = p.subcuts[r.sc] = p.subcuts[r.sc] || { qty:0, rev:0 };
+    sc.qty += q; sc.rev += rev;
+    const c = p.customers[r.c] = p.customers[r.c] || { qty:0, rev:0 };
+    c.qty += q; c.rev += rev;
+    const cs = p.custSub[r.c] = p.custSub[r.c] || {};
+    const x = cs[r.sc] = cs[r.sc] || { qty:0, rev:0, styles:{} };
+    x.qty += q; x.rev += rev;
+    const y = x.styles[r.sn] = x.styles[r.sn] || { qty:0, rev:0 };
+    y.qty += q; y.rev += rev;
+    if (sign > 0) {   // a return is neither a buyer nor dispatch activity
+      p.cust.add(r.c); st.cu.add(r.c);
+      const mo = p.monthly[L.m] = p.monthly[L.m] || { q:0, r:0 };
+      mo.q += r.q; mo.r += r.q * r.p;
+    }
+  };
+  for (const r of D.raw) {
+    if (!r.c || !r.sc || !r.sn || !passesNonDateFilter(r)) continue;
+    const L = locate(r); if (L) bump(L.p, r, 1, L);
+  }
+  for (const r of (D.returns_raw || [])) {
+    if (!r.c || !r.sc || !r.sn || !passesNonDateFilter(r)) continue;
+    const L = locate(r); if (L) bump(L.p, r, -1, L);
+  }
+  fa._cmp = { key, periods:P, months };
+  return fa._cmp;
+}
+
+/** Change from the previous period, as a coloured pill. */
+function cmpDelta(cur, prev) {
+  if (!(prev > 0)) return cur > 0 ? '<span class="cmp-d up" title="Nothing in the previous period">new</span>' : '<span class="cmp-d flat">—</span>';
+  const pct = ((cur - prev) / prev) * 100;
+  if (Math.abs(pct) < 0.5) return '<span class="cmp-d flat">±0%</span>';
+  return `<span class="cmp-d ${pct > 0 ? 'up' : 'down'}">${pct > 0 ? '▲' : '▼'}${Math.abs(pct) >= 100 ? Math.round(Math.abs(pct)) : Math.abs(pct).toFixed(1)}%</span>`;
+}
+function cmpYearTag(p) {
+  return `${p.label}${p.partial ? `<span title="Data for ${esc(p.label)} only covers ${p.have.length ? monthsLabel(p.have) : 'none'} of the months picked">*</span>` : ''}`;
+}
+
+// ── Compare bar UI ──
+function toggleCompare() {
+  CMP.on = !CMP.on;
+  document.body.classList.toggle('cmp-on', CMP.on);
+  document.getElementById('cmp-btn')?.classList.toggle('on', CMP.on);
+  onCompareChange();
+}
+function cmpSetMode(mode) {
+  CMP.mode = mode;
+  if (mode === 'months' && !CMP.months.length) {
+    // Sensible start: the months the newest year actually has (a fair year-to-date comparison)
+    const ys = cmpAllYears(), cov = cmpCoverage();
+    CMP.months = ys.length ? [...cov[ys[ys.length-1]]].sort((a,b) => a-b) : [new Date().getMonth()+1];
+  }
+  onCompareChange();
+}
+function cmpToggleYear(y) {
+  const sel = CMP.years ? [...CMP.years] : cmpAllYears();
+  const i = sel.indexOf(y);
+  if (i >= 0) { if (sel.length === 1) return; sel.splice(i, 1); } else sel.push(y);
+  CMP.years = sel;
+  onCompareChange();
+}
+function cmpToggleMonth(m) {
+  const i = CMP.months.indexOf(m);
+  if (i >= 0) { if (CMP.months.length === 1) return; CMP.months.splice(i, 1); } else CMP.months.push(m);
+  onCompareChange();
+}
+function cmpPreset(which) {
+  if (which === 'allyears') CMP.years = null;
+  else if (which === 'last2') CMP.years = cmpAllYears().slice(-2);
+  else if (which === 'allmonths') CMP.months = [1,2,3,4,5,6,7,8,9,10,11,12];
+  else if (which === 'ytd') { const ys = cmpAllYears(); CMP.months = ys.length ? [...cmpCoverage()[ys[ys.length-1]]] : CMP.months; }
+  else if (which === 'sameMonths') { CMP.mode = 'months'; const ys = cmpYears(); CMP.months = [...cmpCoverage()[ys[ys.length-1]]]; }
+  onCompareChange();
+}
+function renderCmpBar() {
+  const bar = document.getElementById('cmp-bar'); if (!bar) return;
+  if (!CMP.on || !D) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  const all = cmpAllYears(), sel = cmpYears(), P = cmpPeriods();
+  const yearChips = all.map(y => {
+    const on = sel.includes(y);
+    return `<span class="cmp-chip${on ? ' on' : ''}" style="${on ? `background:${cmpYearColor(y)}` : ''}" onclick="cmpToggleYear('${y}')">${y}</span>`;
+  }).join('');
+  const monthChips = CMP.mode === 'months'
+    ? `<div class="cmp-grp"><span class="filter-label">Months:</span>${MONTHS_SHORT.map((m, i) => `<span class="cmp-chip mo${CMP.months.includes(i+1) ? ' on' : ''}" onclick="cmpToggleMonth(${i+1})">${m}</span>`).join('')}
+        <span class="cmp-chip link" onclick="cmpPreset('ytd')">Year to date</span><span class="cmp-chip link" onclick="cmpPreset('allmonths')">All 12</span></div>`
+    : '';
+  const partial = P.filter(p => p.partial);
+  const newest = P[P.length-1];
+  const warn = partial.length
+    ? `<span class="cmp-warn">⚠ ${partial.map(p => `${p.label} only has ${p.have.length ? monthsLabel(p.have) : 'no data'}`).join(' · ')}${CMP.mode === 'years' && newest && newest.partial && newest.have.length ? ` — <a href="#" onclick="cmpPreset('sameMonths');return false">compare ${monthsLabel(newest.have)} only</a>` : ''}</span>`
+    : '';
+  bar.innerHTML = `
+    <span style="font-family:'Syne',sans-serif;font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px">⇄ Compare</span>
+    <div class="cmp-grp">
+      <span class="cmp-chip mo${CMP.mode === 'years' ? ' on' : ''}" onclick="cmpSetMode('years')">Full years</span>
+      <span class="cmp-chip mo${CMP.mode === 'months' ? ' on' : ''}" onclick="cmpSetMode('months')">Pick months</span>
+    </div>
+    <div class="cmp-grp"><span class="filter-label">Years:</span>${yearChips}
+      <span class="cmp-chip link" onclick="cmpPreset('allyears')">All</span><span class="cmp-chip link" onclick="cmpPreset('last2')">Last 2</span></div>
+    ${monthChips}
+    ${warn}
+    <div class="cmp-note">Comparing ${sel.join(' vs ')}${CMP.mode === 'months' ? ` · ${monthsLabel(CMP.months)} of each year` : ''}. The From/To dates above are ignored while comparing — brand, qty and MRP filters still apply. Units and revenue are net of returns; the monthly chart shows dispatches. <a href="#" onclick="toggleCompare();return false">Exit compare</a></div>`;
+}
+function onCompareChange() {
+  renderCmpBar();
+  if (typeof closeDrill === 'function') closeDrill();
+  renderOverview();
+  renderSG();
+}
+
+// ── Compare: Overview ──
+function drawCmpBars(id, C) {
+  const el = document.getElementById(id); if (!el) return;
+  const P = C.periods, months = C.months;
+  if (!P.length) { el.innerHTML = '<div class="bl-empty">Pick at least one year.</div>'; return; }
+  const maxQ = Math.max(1, ...P.flatMap(p => months.map(m => p.monthly[m]?.q || 0)));
+  const n = months.length;
+  const grid = [.25, .5, .75, 1].map(f => `<div class="bl-grid" style="bottom:${f*100}%"><span class="bl-yl">${shortN(maxQ*f)}</span></div>`).join('');
+  const cols = months.map((m, i) => `<div class="bl-col" data-i="${i}"><div class="bl-grp">${P.map(p =>
+      `<div class="bl-bar" style="background:${p.color}" data-h="${((p.monthly[m]?.q || 0) / maxQ * 100).toFixed(2)}"></div>`).join('')}</div></div>`).join('');
+  const labels = months.map((m, i) => `<span class="bl-xl" style="left:${((i+0.5)/n)*100}%">${MONTHS_SHORT[m-1]}</span>`).join('');
+  el.innerHTML = `<div class="bl-legend">${P.map(p => `<span><i class="sw" style="background:${p.color}"></i>${cmpYearTag(p)}</span>`).join('')}<span>units dispatched per month</span></div>
+    <div class="bl-plot">${grid}<div class="bl-cols">${cols}</div><div class="bl-tip" hidden></div></div>
+    <div class="bl-xaxis">${labels}</div>`;
+  wireChartTip(el, n, i => {
+    const m = months[i];
+    return `<b>${MONTHS_SHORT[m-1]}</b>` + P.map((p, j) => {
+      const v = p.monthly[m];
+      const noData = !p.have.includes(m);
+      const prev = j ? (P[j-1].monthly[m]?.q || 0) : null;
+      return `<div class="r"><span style="color:${p.color === '#b5622a' ? '#f0b58c' : p.color}">${esc(p.label)}</span><span>${noData ? 'no data' : `${fN(v?.q || 0)} pcs · ${fmt(Math.round(v?.r || 0))}`}${j && !noData ? ' ' + cmpDelta(v?.q || 0, prev) : ''}</span></div>`;
+    }).join('');
+  });
+  animateGrow(el);
+}
+
+/** One ranked item with a mini bar per period (Overview side cards). */
+function cmpItem(label, vals, P, maxV, fmtFn, nameCls) {
+  const last = vals.length - 1;
+  return `<div class="bar-item"><div class="bar-label"><span class="bar-name${nameCls ? ' ' + nameCls : ''}">${label}</span><span class="bar-val">${last > 0 ? cmpDelta(vals[last], vals[last-1]) : ''}</span></div>
+    ${P.map((p, i) => `<div class="cmp-mini"><span class="cmp-mini-y" style="color:${p.color}">'${esc(p.label.slice(2))}</span><div class="bar-track"><div class="bar-fill" style="width:${(Math.max(vals[i],0) / (maxV || 1) * 100).toFixed(1)}%;background:${p.color}"></div></div><span class="cmp-mini-v">${fmtFn(vals[i])}</span></div>`).join('')}
+  </div>`;
+}
+
+function renderOverviewCompare() {
+  const C = getCMP(), P = C.periods;
+  const threshold = getStyleThreshold();
+  document.getElementById('trend-title').textContent = `📈 Monthly Dispatch — ${P.map(p => p.label).join(' vs ')}`;
+
+  const kpi = (label, color, vals, fmtFn) => `<div class="kpi-card" style="--ac:${color}"><div class="kpi-label">${label}</div><div class="cmp-kpi-rows">${
+    P.map((p, i) => `<div class="cmp-kpi-row"><span class="cmp-yr" style="color:${p.color}">${cmpYearTag(p)}</span><span class="cmp-v">${fmtFn(vals[i])}</span>${i ? cmpDelta(vals[i], vals[i-1]) : '<span class="cmp-d"></span>'}</div>`).join('')
+  }</div></div>`;
+  document.getElementById('kpi-grid').innerHTML =
+      kpi('Revenue', '#b5622a', P.map(p => Math.round(p.rev)), fmt)
+    + kpi('Units', '#4a6fa5', P.map(p => p.qty), fN)
+    + kpi('Active Customers', '#2a8a72', P.map(p => p.cust.size), fN)
+    + kpi(`Styles (&gt;${threshold} sold)`, '#c0392b', P.map(p => Object.values(p.styles).filter(s => s.qty > threshold).length), fN);
+
+  drawCmpBars('trend-chart', C);
+
+  // Rank by the total across every compared period, so an item that
+  // collapsed this year still shows up instead of silently dropping off.
+  const ranked = (key, field) => {
+    const tot = {};
+    P.forEach(p => { for (const [k, v] of Object.entries(p[key])) tot[k] = (tot[k] || 0) + v[field]; });
+    return Object.entries(tot).sort((a,b) => b[1] - a[1]).map(([k]) => k);
+  };
+  const scs = ranked('subcuts', 'rev').filter(Boolean).slice(0, 5);
+  const scVals = scs.map(sc => P.map(p => Math.round(p.subcuts[sc]?.rev || 0)));
+  const scMax = Math.max(1, ...scVals.flat());
+  document.getElementById('ov-sc').innerHTML = scs.map((sc, i) => cmpItem(esc(sc), scVals[i], P, scMax, fmt)).join('');
+
+  const cs = ranked('customers', 'qty').slice(0, 5);
+  const cVals = cs.map(c => P.map(p => p.customers[c]?.qty || 0));
+  const cMax = Math.max(1, ...cVals.flat());
+  document.getElementById('ov-cust').innerHTML = cs.map((c, i) => cmpItem(esc(c.slice(0, 26)), cVals[i], P, cMax, v => fN(v) + ' pcs')).join('');
+
+  const rpuScs = ranked('subcuts', 'qty').filter(Boolean).slice(0, 8);
+  const rVals = rpuScs.map(sc => P.map(p => { const s = p.subcuts[sc]; return s && s.qty > 0 ? Math.round(s.rev / s.qty) : 0; }));
+  const rMax = Math.max(1, ...rVals.flat());
+  document.getElementById('ov-rpu').innerHTML = rpuScs.map((sc, i) => cmpItem(esc(sc), rVals[i], P, rMax, v => '₹' + fN(v))).join('');
+  ['ov-sc', 'ov-cust', 'ov-rpu'].forEach(id => animateGrow(document.getElementById(id)));
 }
 
 // ══════════════════════════════════════════════════════════════
 // OVERVIEW  (filter-aware)
 // ══════════════════════════════════════════════════════════════
 function renderOverview() {
+  if (CMP.on && D) return renderOverviewCompare();
+  const titleEl = document.getElementById('trend-title');
+  if (titleEl) titleEl.textContent = '📈 Monthly Dispatch Volume';
   const fa = getFA();
   const threshold = getStyleThreshold();
   // Count styles that meet the current threshold, from the filter-aware style
@@ -1904,7 +2315,7 @@ function renderOverview() {
     <div class="kpi-card" style="--ac:#4a6fa5"><div class="kpi-label">Total Units${filtNote}</div><div class="kpi-value">${fN(dispQty)}</div><div class="kpi-sub">${fa.customers.length} active customers</div></div>
     <div class="kpi-card" style="--ac:#2a8a72"><div class="kpi-label">Styles (&gt;${threshold} sold)</div><div class="kpi-value">${totalStyles}</div><div class="kpi-sub">Across ${subcutCountWithStyles} sub cut categories</div></div>
     <div class="kpi-card" style="--ac:#c0392b"><div class="kpi-label">Top Style #</div><div class="kpi-value">${topStyle?'#'+topStyle.n:'—'}</div><div class="kpi-sub">${topStyle?topStyle.qty+' units · '+fmt(topStyle.rev):'—'}</div></div>`;
-  drawTrend('trend-svg', fa.monthly.length ? fa.monthly : D.monthly);
+  drawBarLine('trend-chart', fa.monthly.length ? fa.monthly : D.monthly);
   const t5=fa.subcuts.slice(0,5), mr=t5[0]?.revenue||1;
   document.getElementById('ov-sc').innerHTML=t5.map((s,i)=>bar(s.name,(s.revenue/mr)*100,PALETTE[i],fmt(s.revenue))).join('');
   const t5c=fa.customers.slice(0,5), mq=t5c[0]?.qty||1;
@@ -1912,6 +2323,7 @@ function renderOverview() {
   const rpu=fa.subcuts.slice(0,8).map(s=>({n:s.name,v:s.qty?Math.round(s.revenue/s.qty):0})).sort((a,b)=>b.v-a.v);
   const mr2=rpu[0]?.v||1;
   document.getElementById('ov-rpu').innerHTML=rpu.map((s,i)=>bar(s.n,(s.v/mr2)*100,PALETTE[i],'₹'+fN(s.v))).join('');
+  ['ov-sc','ov-cust','ov-rpu'].forEach(id => animateGrow(document.getElementById(id)));
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1936,14 +2348,86 @@ function renderSubcuts() {
 // ══════════════════════════════════════════════════════════════
 // STYLE GROUPS  (filter-aware, user-configurable qty threshold)
 // ══════════════════════════════════════════════════════════════
+/** Compare-mode body for the Style Numbers tab: same sub-cut groups and
+ *  expand/filter/search behaviour, but each style row shows one column per
+ *  compared year plus the change from the year before the newest. A style
+ *  qualifies if it beat the min-units threshold in ANY compared year, so a
+ *  style that died this year still shows (as a drop) instead of vanishing. */
+function renderSGCompare(sort, threshold) {
+  const C = getCMP(), P = C.periods, L = P.length, last = L - 1;
+  const metric = sort === 'revenue' ? 'rev' : sort === 'customers' ? 'cust' : 'qty';
+  const fmtM = v => metric === 'rev' ? fmt(Math.round(v)) : metric === 'cust' ? fN(v) : fN(v);
+  const unitM = metric === 'rev' ? '' : metric === 'cust' ? ' buyers' : ' pcs';
+
+  const all = {};
+  P.forEach((p, i) => {
+    for (const [sn, s] of Object.entries(p.styles)) {
+      const a = all[sn] = all[sn] || { sc:s.sc, v:P.map(() => ({ qty:0, rev:0, cust:0 })) };
+      a.v[i] = { qty:s.qty, rev:s.rev, cust:s.cu.size };
+    }
+  });
+  const groups = {};
+  for (const [sn, a] of Object.entries(all)) {
+    if (!a.sc || Math.max(...a.v.map(x => x.qty)) <= threshold) continue;
+    (groups[a.sc] = groups[a.sc] || []).push({ n:sn, v:a.v });
+  }
+  const sum = arr => arr.reduce((t, x) => t + x, 0);
+  const gl = Object.entries(groups)
+    .map(([sc, styles]) => ({ sc, styles, tot:P.map((_, i) => sum(styles.map(s => s.v[i].qty))) }))
+    .sort((a, b) => sum(b.tot) - sum(a.tot));
+
+  const count = gl.reduce((t, g) => t + g.styles.length, 0);
+  document.getElementById('sn-count-sub').textContent =
+    `Comparing ${P.map(p => p.label).join(' vs ')}${CMP.mode === 'months' ? ` (${monthsLabel(C.months)})` : ''} · ${count} styles with qty > ${threshold} in at least one year. Click any group to expand.`;
+
+  document.getElementById('sg-container').innerHTML = gl.map((g, gi) => {
+    const col = scColor(g.sc);
+    const rows = [...g.styles].sort((a, b) => (b.v[last][metric] - a.v[last][metric]) || (sum(b.v.map(x => x[metric])) - sum(a.v.map(x => x[metric]))));
+    const rowMax = Math.max(1, ...rows.flatMap(s => s.v.map(x => x[metric])));
+    const body = rows.map((s, i) => `<tr class="sn-row" data-style="${esc(s.n)}">
+      <td style="color:var(--text3);font-family:IBM Plex Mono,monospace;font-size:11px;padding:7px 12px;width:32px">${i+1}</td>
+      <td style="padding:5px 12px"><div style="display:flex;align-items:center;gap:9px">${designThumb(s.n,'sm')}<strong style="font-family:IBM Plex Mono,monospace;color:${col}">#${esc(s.n)}</strong>${BRAND_FILTER==='all'?brandBadge(s.n):''}</div></td>
+      ${s.v.map((x, j) => {
+        const v = x[metric];
+        return `<td class="cmp-cell${v === 0 ? ' zero' : ''}" style="padding:6px 12px"><strong style="color:${v ? P[j].color : 'inherit'}">${fmtM(v)}</strong>${metric !== 'rev' && x.rev ? `<span class="sub">${fmt(Math.round(x.rev))}</span>` : ''}<span class="mb"><i style="width:${(Math.max(v,0)/rowMax*100).toFixed(0)}%;background:${P[j].color}"></i></span></td>`;
+      }).join('')}
+      ${L > 1 ? `<td style="text-align:right;padding:7px 12px">${cmpDelta(s.v[last][metric], s.v[last-1][metric])}</td>` : ''}
+    </tr>`).join('');
+    return `<div class="sg" data-sc="${esc(g.sc)}" id="sg-${gi}">
+      <div style="height:3px;background:${col}"></div>
+      <div class="sg-hdr" onclick="tg(${gi})" id="sh-${gi}" style="--sg-color:${col}">
+        <div><div class="sg-name" style="color:${col}">${esc(g.sc)}</div><div class="sg-meta">${g.styles.length} styles · ${P.map(p => p.label).join(' / ')}</div></div>
+        <div style="display:flex;align-items:center;gap:16px">
+          ${P.map((p, i) => `<div><div class="sg-stat-lbl" style="color:${p.color}">${cmpYearTag(p)}</div><div class="sg-stat-val" style="font-size:12px;font-family:IBM Plex Mono,monospace">${fN(g.tot[i])} pcs</div></div>`).join('')}
+          ${L > 1 ? `<div><div class="sg-stat-lbl">Change</div><div class="sg-stat-val">${cmpDelta(g.tot[last], g.tot[last-1])}</div></div>` : ''}
+          <span class="chevron">▼</span>
+        </div>
+      </div>
+      <div class="sg-body" id="sb-${gi}">
+        <table class="sg-inner-table"><thead><tr><th>#</th><th>Style No.</th>${P.map(p => `<th style="text-align:right;color:${p.color}">${cmpYearTag(p)}${unitM ? ' ·' + unitM : ' · revenue'}</th>`).join('')}${L > 1 ? `<th style="text-align:right">vs ${esc(P[last-1].label)}</th>` : ''}</tr></thead><tbody>${body}</tbody></table>
+      </div></div>`;
+  }).join('') || '<div class="bl-empty">No styles in the compared periods.</div>';
+}
+
 function renderSG() {
   const sort=document.getElementById('snsort').value;
   const fa = getFA();
+  // Which sub cut groups were expanded, by name (not index — the set of groups
+  // and their order both change with the sort and the threshold). Re-rendering
+  // rebuilds #sg-container from scratch, so without this every group slams shut
+  // on any change, which made the Sort dropdown look like it did nothing at all.
+  const wasOpen = new Set(
+    [...document.querySelectorAll('.sg')]
+      .filter(el => el.querySelector('.sg-body')?.classList.contains('open'))
+      .map(el => el.dataset.sc)
+  );
   const fe=document.getElementById('snfilter');
   if(fe.options.length===1){D.style_groups.forEach(g=>{const o=document.createElement('option');o.value=g.sc;o.text=`${g.sc} (${g.s.length})`;fe.appendChild(o);});}
 
   // Build style groups using the user-set threshold
   const threshold = getStyleThreshold();
+  if (CMP.on) renderSGCompare(sort, threshold);
+  else {
   const sgMap = {};
   for (const [sn, v] of Object.entries(fa.styles)) {
     if (v.qty > threshold && v.sc) {
@@ -1991,6 +2475,20 @@ function renderSG() {
         <table class="sg-inner-table"><thead><tr><th>#</th><th>Style No.</th><th>Units Sold</th><th style="text-align:right">Revenue</th><th style="text-align:right">MRP</th><th style="text-align:center">Customers</th><th style="text-align:right">Run Rate</th></tr></thead><tbody>${rows}</tbody></table>
       </div></div>`;
   }).join('');
+  }
+
+  // Put the user's expanded groups back, then re-apply the Sub Cut dropdown and
+  // the search box. Both of those live as inline display styles painted onto the
+  // DOM by filterSG(), so a rebuild wipes them — changing the sort used to
+  // silently drop an active sub cut filter and show every group again.
+  if (wasOpen.size) {
+    document.querySelectorAll('.sg').forEach(el => {
+      if (!wasOpen.has(el.dataset.sc)) return;
+      el.querySelector('.sg-hdr')?.classList.add('open');
+      el.querySelector('.sg-body')?.classList.add('open');
+    });
+  }
+  filterSG();
 }
 
 // ── Style → Customer drill ────────────────────────────────────
@@ -2267,6 +2765,7 @@ function handleCustClick(custName, rowEl) {
 // Cluster rows: aggregate across all member customers, both during filter recompute
 // and via clustered_drill fallback.
 function openDrillByName(custName, rowEl) {
+  if (CMP.on) { openDrillCompare(custName, rowEl); return; }
   let drillData;
 
   // Detect cluster row: D.clustered_drill has this exact name, or the row had _isCluster set.
@@ -2377,6 +2876,83 @@ function openDrill(custName, drillData, rowEl) {
   document.getElementById('drill-panel').scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 
+/** Compare-mode drill-down: the customer's (or cluster's) sub cuts, then
+ *  styles, with one figure per compared year. Reached through the same
+ *  handleCustClick() lock gate as the normal drill. */
+function openDrillCompare(custName, rowEl) {
+  const membership = D.cluster_membership || {};
+  const isCluster = !!(D.clustered_drill && D.clustered_drill[custName]);
+  const members = isCluster ? Object.entries(membership).filter(([, v]) => v === custName).map(([k]) => k) : [custName];
+  const C = getCMP(), P = C.periods, L = P.length, last = L - 1;
+
+  const subs = {};
+  P.forEach((p, i) => members.forEach(m => {
+    const cs = p.custSub[m]; if (!cs) return;
+    for (const [sc, x] of Object.entries(cs)) {
+      const s = subs[sc] = subs[sc] || { v:P.map(() => ({ qty:0, rev:0 })), styles:{} };
+      s.v[i].qty += x.qty; s.v[i].rev += x.rev;
+      for (const [sn, y] of Object.entries(x.styles)) {
+        const st = s.styles[sn] = s.styles[sn] || P.map(() => ({ qty:0, rev:0 }));
+        st[i].qty += y.qty; st[i].rev += y.rev;
+      }
+    }
+  }));
+
+  if (activeCustRow) { activeCustRow.style.background=''; const sp=activeCustRow.querySelector('span'); if(sp)sp.textContent='▶'; }
+  if (rowEl) { rowEl.style.background='#fdf0e8'; const sp=rowEl.querySelector('span'); if(sp)sp.textContent='▼'; }
+  activeCustRow = rowEl || null;
+
+  document.getElementById('drill-cust-name').textContent = custName;
+  document.getElementById('drill-date-label').textContent =
+    `(comparing ${P.map(p => p.label).join(' vs ')}${CMP.mode === 'months' ? ` · ${monthsLabel(C.months)}` : ''})`;
+  document.getElementById('drill-styles').style.display = 'none';
+
+  const entries = Object.entries(subs).filter(([sc]) => sc)
+    .sort((a, b) => b[1].v.reduce((t, x) => t + x.qty, 0) - a[1].v.reduce((t, x) => t + x.qty, 0));
+  window._scMap = {};
+  entries.forEach(([sc, s]) => { window._scMap[sc] = { _cmp:true, periods:P, v:s.v, styles:s.styles }; });
+  const maxQ = Math.max(1, ...entries.flatMap(([, s]) => s.v.map(x => x.qty)));
+
+  document.getElementById('drill-sc-cards').innerHTML = entries.length ? entries.map(([sc, s]) => {
+    const col = scColor(sc);
+    const safeSc = sc.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    return `<div class="drill-sc-card" style="border-color:${col}30;border-top-color:${col}" onclick="openStyleDrillByKey('${safeSc}')">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px"><span style="font-family:'Syne',sans-serif;font-weight:700;font-size:13px;color:${col}">${esc(sc)}</span>${L > 1 ? cmpDelta(s.v[last].qty, s.v[last-1].qty) : ''}</div>
+      ${P.map((p, i) => `<div class="cmp-mini"><span class="cmp-mini-y" style="color:${p.color}">'${esc(p.label.slice(2))}</span><div class="cmp-track"><i style="width:${(Math.max(s.v[i].qty,0)/maxQ*100).toFixed(0)}%;background:${p.color}"></i></div><span class="cmp-mini-v">${fN(s.v[i].qty)}</span></div>`).join('')}
+      <div style="font-size:9px;color:var(--text3);margin-top:4px;font-family:'IBM Plex Mono',monospace">tap → style numbers</div>
+    </div>`;
+  }).join('') : `<div style="grid-column:1/-1;font-size:12px;color:var(--text3);padding:8px 0">No orders from this customer in ${P.map(p => p.label).join(', ')}${CMP.mode === 'months' ? ` (${monthsLabel(C.months)})` : ''}.</div>`;
+
+  document.getElementById('drill-panel').style.display = 'block';
+  document.getElementById('drill-panel').scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
+
+function redrawStyleTableCompare() {
+  const col = scColor(_curSC), P = _curSCData.periods, L = P.length, last = L - 1;
+  const topN = parseInt(document.getElementById('drill-top-n')?.value) || 10;
+  const sortBy = document.getElementById('drill-sort')?.value || 'qty';
+  const k = sortBy === 'rev' ? 'rev' : 'qty';          // reorder frequency isn't per-year; falls back to units
+  let styles = Object.entries(_curSCData.styles).map(([n, v]) => ({ n, v }));
+  styles.sort((a, b) => (b.v[last][k] - a.v[last][k]) || (b.v.reduce((t, x) => t + x[k], 0) - a.v.reduce((t, x) => t + x[k], 0)));
+  styles = styles.slice(0, topN === 999 ? 50 : topN);
+  const maxQ = Math.max(1, ...styles.flatMap(s => s.v.map(x => x.qty)));
+  const th = 'padding:7px 10px;font-family:\'IBM Plex Mono\',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)';
+  document.getElementById('drill-style-table').innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:12.5px">
+      <thead><tr style="background:#faf9f7;border-bottom:2px solid var(--border)">
+        <th style="${th};text-align:left">#</th><th style="${th};text-align:left">Style No.</th>
+        ${P.map(p => `<th style="${th};text-align:right;color:${p.color}">${cmpYearTag(p)}</th>`).join('')}
+        ${L > 1 ? `<th style="${th};text-align:right">vs ${esc(P[last-1].label)}</th>` : ''}
+      </tr></thead>
+      <tbody>${styles.map((s, i) => `<tr style="border-bottom:1px solid #f0ede8">
+        <td style="color:var(--text3);font-size:11px;font-family:'IBM Plex Mono',monospace;padding:7px 10px">${i+1}</td>
+        <td style="padding:5px 10px"><div style="display:flex;align-items:center;gap:8px">${designThumb(s.n,'sm')}<span style="font-family:'IBM Plex Mono',monospace;font-weight:700;color:${col}">#${esc(s.n)}</span>${BRAND_FILTER==='all'?brandBadge(s.n):''}</div></td>
+        ${s.v.map((x, j) => `<td class="cmp-cell${x.qty === 0 ? ' zero' : ''}" style="padding:6px 10px"><strong style="color:${x.qty ? P[j].color : 'inherit'}">${fN(x.qty)} pcs</strong>${x.rev ? `<span class="sub">${fmt(Math.round(x.rev))}</span>` : ''}<span class="mb"><i style="width:${(Math.max(x.qty,0)/maxQ*100).toFixed(0)}%;background:${P[j].color}"></i></span></td>`).join('')}
+        ${L > 1 ? `<td style="text-align:right;padding:7px 10px">${cmpDelta(s.v[last][k], s.v[last-1][k])}</td>` : ''}
+      </tr>`).join('')}</tbody>
+    </table>`;
+}
+
 // Reads sub cut data from window._scMap — no JSON embedded in onclick attribute
 function openStyleDrillByKey(sc) {
   const data = window._scMap?.[sc];
@@ -2393,6 +2969,7 @@ function openStyleDrill(sc, data) {
 
 function redrawStyleTable() {
   if (!_curSC || !_curSCData) return;
+  if (_curSCData._cmp) return redrawStyleTableCompare();
   const col   = scColor(_curSC);
   const topN  = parseInt(document.getElementById('drill-top-n')?.value) || 10;
   const sortBy = document.getElementById('drill-sort')?.value || 'qty';
@@ -3221,6 +3798,8 @@ function switchTab(name, el) {
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
   el.classList.add('active');
+  // Replay the grow-in so the bars are seen moving, not finished while hidden
+  if (name === 'overview') ['trend-chart','ov-sc','ov-cust','ov-rpu'].forEach(id => animateGrow(document.getElementById(id)));
 }
 
 function initDashboard() {

@@ -536,6 +536,44 @@ whether the row had anything else recognisable in it. The two bad rows were
 fixed at the source by the user during this investigation, not by any code
 change here.
 
+## Overview chart + Compare mode
+
+**Monthly chart** is `drawBarLine()`: HTML bars (units dispatched) plus an SVG
+revenue line on its own right-hand scale — plain HTML bars rather than the old
+stretched SVG so labels never distort. Monthly figures are dispatch activity,
+so gross of returns (same rule as `getFA()`'s `monthly`, which now carries `r`).
+`animateGrow()` grows bars from zero on render and again on `switchTab('overview')`.
+
+**Compare mode** (`⇄ Compare` on the filter bar, `CMP` state, `#cmp-bar`):
+full years side by side, or picked months compared across picked years. Works
+on Overview, Style Numbers and the Customers drill-down; every other tab shows
+a `.cmp-na` banner saying it's the normal view. Decisions worth keeping:
+
+- **The compare picks are the dates** — `getCMP()` filters with
+  `passesNonDateFilter()` (brand/qty/MRP only), so From/To is ignored and the
+  bar says so. Figures net of returns, same as the normal views.
+- **Partial years are flagged, never silently compared** — `cmpCoverage()`
+  knows which months each year actually has; a partial year gets a `*` and a
+  warning with a one-click "compare the same months only".
+- **Rank by the total across compared years**, and a style qualifies for the
+  min-units threshold in *any* year — so something that collapsed this year
+  shows as a drop instead of vanishing.
+- `getCMP()` is cached on the `_FA` object (keyed on the picks), same
+  invalidation trick as `returnsGross()`. Measured at 79k synthetic rows:
+  rebuild + re-render on a year toggle ≈ 40ms; Style Numbers compare HTML is no
+  larger than the normal view's.
+- Compare-mode style rows have **no click-through** to the style→buyer drill:
+  that drill reads the date-filtered rows and would disagree with the compared
+  years.
+- Drill cards use `.cmp-track`, not `.bar-track` — the locked-mode CSS hides
+  every `.bar-track`, which would blank the one revealed customer in customer
+  mode.
+
+**Style Numbers re-render** (`renderSG()`) keeps expanded groups open and
+re-applies the Sub Cut dropdown + search afterwards. It used to rebuild
+everything collapsed, which made the Sort dropdown look broken and silently
+dropped an active sub-cut filter.
+
 ## Customer clusters
 
 [src/lib/clusters.ts](src/lib/clusters.ts) hand-maps duplicate/related customer
