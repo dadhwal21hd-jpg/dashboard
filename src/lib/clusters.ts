@@ -72,8 +72,26 @@ export const CLUSTERS: ClusterDef[] = [
     members: ["CASH (SHOP )", "CASH"],
   },
   {
-    name: "Family",
-    members: ["KOMAL MAM", "KRITI MAM", "KRITI MAM(SUMINA SOOD)", "BITTU SIR", "NITTU SIR", "KIRTI MAM HOUSE"],
+    name: "FAMILY SALES",
+    // Family, friends, staff and "c/o" accounts — confirmed with the user
+    // (Sep 2026). The first six are old-sheet spellings; the rest are the
+    // Oracle/DASH names. "RAJNI MAM[PHAGWARA]" was deliberately left out.
+    members: [
+      "KOMAL MAM", "KRITI MAM", "KRITI MAM(SUMINA SOOD)", "BITTU SIR", "NITTU SIR", "KIRTI MAM HOUSE",
+      "JYOTI MAM HOUSE",
+      "KRITI MADAM HOUSE",
+      "VINI MAM HOUSE",
+      "KRITI MAM FRIENDS",
+      "BITTU SIR FRIEND",
+      "RAJA SIR FRIEND",
+      "RAJA SIR",
+      "RUCHI JI [KRITI MAM FRIEND]",
+      "DIVYA CHADHA [C/O KRITI MAM]",
+      "PAPPU JI [C/O NITTU SIR]",
+      "SEEMA CHHABRA JI [C/O NITTU SIR]",
+      "OFFICE STAFF",
+      "BHUPINDER JI JUDGE",
+    ],
   },
   {
     name: "BHOPAL GROUP",
