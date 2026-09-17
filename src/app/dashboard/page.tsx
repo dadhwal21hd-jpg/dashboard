@@ -114,7 +114,7 @@ export default function DashboardPage() {
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-stone-100">
             <Spinner />
             <p className="text-xs font-medium uppercase tracking-wider text-stone-500">
-              Pulling from Google Sheet…
+              Syncing with the SDWL data core…
             </p>
           </div>
         )}
