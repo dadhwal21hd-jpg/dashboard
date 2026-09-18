@@ -16,23 +16,6 @@
 *{margin:0;padding:0;box-sizing:border-box;}
 body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-height:100vh;}
 
-/* ─── UPLOAD SCREEN ─────────────────────────────────────────────── */
-#upload-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:24px;padding:40px;}
-.upload-box{background:#fff;border:2px dashed var(--border2);border-radius:16px;padding:60px 80px;text-align:center;cursor:pointer;transition:all .2s;max-width:560px;width:100%;}
-.upload-box:hover,.upload-box.drag{border-color:var(--accent);background:var(--accentlt);}
-.upload-icon{font-size:48px;margin-bottom:16px;}
-.upload-title{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;margin-bottom:8px;}
-.upload-sub{font-size:13px;color:var(--text2);line-height:1.6;}
-.upload-hint{font-size:11px;color:var(--text3);margin-top:12px;font-family:'IBM Plex Mono',monospace;}
-#file-input{display:none;}
-.upload-btn{display:inline-block;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:14px;font-family:'Syne',sans-serif;font-weight:700;cursor:pointer;margin-top:16px;transition:all .15s;}
-.upload-btn:hover{background:#9a4f22;}
-.col-guide{background:#fff;border:1px solid var(--border);border-radius:10px;padding:20px 28px;max-width:560px;width:100%;}
-.col-guide h3{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;}
-.col-list{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
-.col-pill{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text2);}
-#upload-err{color:var(--accent4);font-size:13px;display:none;}
-
 /* ─── HEADER ─────────────────────────────────────────────────────── */
 #app{display:none;}
 .header{background:#fff;border-bottom:1px solid var(--border);padding:14px 36px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 1px 6px rgba(0,0,0,.06);}
@@ -824,39 +807,6 @@ body.cmp-on .cmp-na{display:block;}
   <div style="font-family:'Syne',sans-serif;font-weight:700;color:var(--text2)">Processing CSV…</div>
 </div>
 
-<!-- ═══════════════════════════════════════════════════════════ UPLOAD SCREEN -->
-<div id="upload-screen">
-  <div style="text-align:center">
-    <div class="logo" style="font-size:26px;margin-bottom:6px">  <span>Design</span> Intelligence</div>
-    <div style="font-size:13px;color:var(--text3)">Dispatch Analytics Dashboard</div>
-  </div>
-
-  <div class="upload-box" id="drop-zone" onclick="document.getElementById('file-input').click()"
-       ondragover="ev.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')"
-       ondrop="ev.preventDefault();this.classList.remove('drag');handleFile(ev.dataTransfer.files[0])">
-    <div class="upload-icon">📦</div>
-    <div class="upload-title">Drop your dispatch CSV here</div>
-    <div class="upload-sub">or click to browse for the file</div>
-    <button class="upload-btn" onclick="event.stopPropagation();document.getElementById('file-input').click()">Choose CSV File</button>
-    <div class="upload-hint">CSV must have: Style Number · Sub Cut Style · Qty · Order Sent To · Price · Customer Dispatch Date</div>
-  </div>
-  <div id="upload-err"></div>
-
-  <div class="col-guide">
-    <h3>Required CSV Columns</h3>
-    <div class="col-list">
-      <span class="col-pill">Style Number</span>
-      <span class="col-pill">Sub Cut Style</span>
-      <span class="col-pill">Qty</span>
-      <span class="col-pill">Order Sent To</span>
-      <span class="col-pill">Price</span>
-      <span class="col-pill">Customer Dispatch Date</span>
-    </div>
-    <div style="font-size:11px;color:var(--text3);margin-top:10px">Column names are flexible — common variants are auto-detected. Date format: DD/MM/YYYY</div>
-  </div>
-</div>
-<input type="file" id="file-input" accept=".csv" onchange="handleFile(this.files[0])">
-
 <!-- ═══════════════════════════════════════════════════════════ APP -->
 <div id="app">
 <div class="header">
@@ -869,7 +819,6 @@ body.cmp-on .cmp-na{display:block;}
     <button class="lock-btn locked" id="lock-btn" onclick="onLockBtnClick()" title="Click to unlock">
       <span class="lock-icon">🔒</span><span id="lock-btn-label">LOCKED</span>
     </button>
-    <button class="btn btn-outline btn-sm" onclick="resetApp()">↩ Load New CSV</button>
     <button class="btn btn-primary btn-sm" onclick="exportAllCSV()">⬇ Export All (CSV)</button>
   </div>
 </div>
@@ -1475,225 +1424,6 @@ function requestCustomerUnlock(custName) {
     title: '▸ CUSTOMER ACCESS REQUEST',
     sub:   `Reveal data for <span class="target">${custName}</span>?`,
   });
-}
-
-// ══════════════════════════════════════════════════════════════
-// CSV PARSING (browser-side)
-// ══════════════════════════════════════════════════════════════
-function handleFile(file) {
-  if (!file) return;
-  if (!file.name.endsWith('.csv')) return showErr('Please select a .csv file');
-  showLoading(true);
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      const data = parseCSV(e.target.result);
-      D = data;
-      FILTERED_RAW = [...D.raw];
-      initDashboard();
-    } catch(err) {
-      showLoading(false);
-      showErr('Error: ' + err.message);
-    }
-  };
-  reader.readAsText(file, 'utf-8');
-}
-
-function parseCSV(text) {
-  // Remove BOM
-  text = text.replace(/^\uFEFF/, '');
-  const lines = text.split(/\r?\n/).filter(l => l.trim());
-  if (lines.length < 2) throw new Error('CSV has no data rows');
-
-  // Parse header
-  const headers = parseLine(lines[0]).map(h => h.trim().toLowerCase());
-
-  // Column detection
-  const colMap = {};
-  const needed = {
-    style: ['style number','style_number','style no','style'],
-    subcut:['sub cut style','sub_cut_style','subcut','cut style','sub cut'],
-    qty:   ['qty','quantity','units'],
-    cust:  ['order sent to','customer','order_sent_to','party'],
-    price: ['price','mrp','rate'],
-    date:  ['customer dispatch date','dispatch date','date','dispatch_date'],
-  };
-  for (const [key, candidates] of Object.entries(needed)) {
-    for (const c of candidates) {
-      if (headers.includes(c)) { colMap[key] = headers.indexOf(c); break; }
-    }
-    if (colMap[key] === undefined) throw new Error(`Cannot find column for "${key}". Found: ${headers.join(', ')}`);
-  }
-
-  const rows = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cells = parseLine(lines[i]);
-    if (cells.length < 3) continue;
-    const qty = parseInt(cells[colMap.qty]) || 0;
-    if (qty === 0) continue;
-    const price = parsePrice(cells[colMap.price]);
-    const date  = (cells[colMap.date] || '').trim();
-    rows.push({
-      c:  (cells[colMap.cust]  || '').trim(),
-      sc: (cells[colMap.subcut]|| '').trim(),
-      sn: (cells[colMap.style] || '').trim(),
-      q:  qty,
-      p:  price,
-      d:  date,
-      dt: parseDate(date),
-    });
-  }
-  if (!rows.length) throw new Error('No valid data rows found');
-  return buildAnalytics(rows);
-}
-
-function parseLine(line) {
-  const cells = [];
-  let cur = '', inQ = false;
-  for (let i = 0; i < line.length; i++) {
-    if (line[i] === '"') { inQ = !inQ; continue; }
-    if (line[i] === ',' && !inQ) { cells.push(cur); cur = ''; continue; }
-    cur += line[i];
-  }
-  cells.push(cur);
-  return cells;
-}
-
-function parsePrice(p) {
-  const m = String(p || '').replace(',','').match(/\d+(\.\d+)?/);
-  return m ? parseFloat(m[0]) : 0;
-}
-
-function parseDate(d) {
-  d = String(d || '').trim();
-  const fmts = [
-    [/^(\d{2})\/(\d{2})\/(\d{4})$/, (a) => new Date(+a[3],+a[2]-1,+a[1])],
-    [/^(\d{4})-(\d{2})-(\d{2})$/,   (a) => new Date(+a[1],+a[2]-1,+a[3])],
-    [/^(\d{2})-(\d{2})-(\d{4})$/,   (a) => new Date(+a[3],+a[2]-1,+a[1])],
-    [/^(\d{2})\/(\d{2})\/(\d{2})$/,  (a) => new Date(+('20'+a[3]),+a[2]-1,+a[1])],
-  ];
-  for (const [re, fn] of fmts) {
-    const m = d.match(re);
-    if (m) { const dt = fn(m); return isNaN(dt) ? null : dt; }
-  }
-  return null;
-}
-
-// ══════════════════════════════════════════════════════════════
-// ANALYTICS BUILDER (runs on parsed rows)
-// ══════════════════════════════════════════════════════════════
-function buildAnalytics(rows) {
-  const scAcc    = {};
-  const custAcc  = {};
-  const styleAcc = {};
-  const monthAcc = {};
-  const drillAcc = {};
-  let totalQty = 0, totalRev = 0;
-  const allDates = [];
-
-  for (const r of rows) {
-    if (!r.c || !r.sc || !r.sn) continue;
-    const rev = r.q * r.p;
-    totalQty += r.q;
-    totalRev += rev;
-    if (r.dt) allDates.push(r.dt);
-
-    // Sub cut
-    if (!scAcc[r.sc]) scAcc[r.sc] = {qty:0,rev:0,custs:new Set(),styles:new Set()};
-    scAcc[r.sc].qty += r.q; scAcc[r.sc].rev += rev;
-    scAcc[r.sc].custs.add(r.c); scAcc[r.sc].styles.add(r.sn);
-
-    // Customer
-    if (!custAcc[r.c]) custAcc[r.c] = {qty:0,rev:0,scs:new Set(),styles:new Set()};
-    custAcc[r.c].qty += r.q; custAcc[r.c].rev += rev;
-    custAcc[r.c].scs.add(r.sc); custAcc[r.c].styles.add(r.sn);
-
-    // Style
-    if (!styleAcc[r.sn]) styleAcc[r.sn] = {qty:0,rev:0,sc:r.sc,price:0,custs:new Set(),dates:new Set()};
-    styleAcc[r.sn].qty += r.q; styleAcc[r.sn].rev += rev;
-    if (r.p > 0) styleAcc[r.sn].price = r.p;
-    styleAcc[r.sn].custs.add(r.c); styleAcc[r.sn].dates.add(r.d);
-
-    // Monthly
-    if (r.dt) {
-      const mk = `${r.dt.getFullYear()}-${String(r.dt.getMonth()+1).padStart(2,'0')}`;
-      monthAcc[mk] = (monthAcc[mk] || 0) + r.q;
-    }
-
-    // Drill
-    if (!drillAcc[r.c]) drillAcc[r.c] = {};
-    if (!drillAcc[r.c][r.sc]) drillAcc[r.c][r.sc] = {};
-    if (!drillAcc[r.c][r.sc][r.sn]) drillAcc[r.c][r.sc][r.sn] = {qty:0,rev:0,price:0,dates:new Set()};
-    const ds = drillAcc[r.c][r.sc][r.sn];
-    ds.qty += r.q; ds.rev += rev;
-    if (r.p > 0) ds.price = r.p;
-    if (r.d) ds.dates.add(r.d);
-  }
-
-  // Serialise
-  const subcuts = Object.entries(scAcc)
-    .filter(([sc]) => sc)
-    .map(([sc, v]) => ({name:sc, qty:v.qty, revenue:Math.round(v.rev), customers:v.custs.size, styles:v.styles.size}))
-    .sort((a,b) => b.qty - a.qty);
-
-  const customers = Object.entries(custAcc)
-    .filter(([c]) => c)
-    .map(([c, v]) => ({name:c, qty:v.qty, revenue:Math.round(v.rev), sc:[...v.scs], vc:v.styles.size}))
-    .sort((a,b) => b.qty - a.qty);
-
-  // Style groups (filter by current threshold, which defaults to 10)
-  const sgThreshold = getStyleThreshold();
-  const sgRaw = {};
-  for (const [sn, v] of Object.entries(styleAcc)) {
-    if (v.qty > sgThreshold && v.sc) {
-      if (!sgRaw[v.sc]) sgRaw[v.sc] = [];
-      sgRaw[v.sc].push({n:sn, qty:v.qty, rev:Math.round(v.rev), price:Math.round(v.price), cust:v.custs.size});
-    }
-  }
-  const styleGroups = Object.entries(sgRaw)
-    .map(([sc, styles]) => ({sc, tq: styles.reduce((s,x)=>s+x.qty,0), s: styles.sort((a,b)=>b.qty-a.qty)}))
-    .sort((a,b) => b.tq - a.tq);
-
-  const MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const monthly = Object.entries(monthAcc)
-    .sort(([a],[b]) => a < b ? -1 : 1)
-    .map(([k,q]) => { const [y,mo]=k.split('-'); return {m:`${MN[+mo-1]} ${y.slice(2)}`, q}; });
-
-  // Drill JSON (top 10 SCs, top 25 styles each with freq)
-  const drill = {};
-  for (const [cust, scObj] of Object.entries(drillAcc)) {
-    const scTotals = Object.entries(scObj).filter(([sc])=>sc).map(([sc,st])=>({sc,qty:Object.values(st).reduce((s,v)=>s+v.qty,0)})).sort((a,b)=>b.qty-a.qty).slice(0,10);
-    drill[cust] = {};
-    for (const {sc, qty} of scTotals) {
-      const styles = Object.entries(scObj[sc]).sort((a,b)=>b[1].qty-a[1].qty).slice(0,25);
-      drill[cust][sc] = {
-        qty,
-        rev: Math.round(Object.values(scObj[sc]).reduce((s,v)=>s+v.rev,0)),
-        styles: styles.map(([sn,v])=>({n:sn, qty:v.qty, rev:Math.round(v.rev), price:Math.round(v.price), freq:v.dates.size}))
-      };
-    }
-  }
-
-  // Date range
-  let dateRange = '';
-  if (allDates.length) {
-    const mn = new Date(Math.min(...allDates)), mx = new Date(Math.max(...allDates));
-    dateRange = `${MN[mn.getMonth()]} ${mn.getFullYear()} – ${MN[mx.getMonth()]} ${mx.getFullYear()}`;
-    // Set default date inputs
-    setTimeout(() => {
-      document.getElementById('date-from').min = mn.toISOString().slice(0,10);
-      document.getElementById('date-from').max = mx.toISOString().slice(0,10);
-      document.getElementById('date-to').min   = mn.toISOString().slice(0,10);
-      document.getElementById('date-to').max   = mx.toISOString().slice(0,10);
-    }, 50);
-  }
-
-  return {
-    total_qty: totalQty, total_rev: Math.round(totalRev),
-    total_rows: rows.length, date_range: dateRange,
-    subcuts, customers, style_groups: styleGroups, monthly, drill,
-    raw: rows
-  };
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -3828,6 +3558,8 @@ function switchTab(name, el) {
   if (name === 'overview') ['trend-chart','ov-sc','ov-cust','ov-rpu'].forEach(id => animateGrow(document.getElementById(id)));
 }
 
+function showLoading(on) { document.getElementById('loading').className = on?'loading-overlay show':'loading-overlay'; }
+
 function initDashboard() {
   D.subcuts.forEach(s => scColor(s.name));
   _FA = null;
@@ -3848,27 +3580,12 @@ function initDashboard() {
   document.getElementById('hdr-sub').textContent = `Dispatch & Sales Analytics · ${D.date_range}`;
   document.getElementById('hdr-meta').innerHTML = `Records: <b>${D.total_rows.toLocaleString()}</b> &nbsp;|&nbsp; Units: <b>${fN(D.total_qty)}</b> &nbsp;|&nbsp; Revenue: <b>${fmt(D.total_rev)}</b>`;
 
-  document.getElementById('upload-screen').style.display = 'none';
   document.getElementById('app').style.display = 'block';
 
   renderAll();
   applyLockState();   // apply locked CSS class and button state
   showLoading(false);
 }
-
-function resetApp() {
-  D = null; FILTERED_RAW = []; DATE_FROM = null; DATE_TO = null; activeCustRow = null;
-  document.getElementById('app').style.display = 'none';
-  document.getElementById('upload-screen').style.display = 'flex';
-  document.getElementById('file-input').value = '';
-  document.getElementById('upload-err').style.display = 'none';
-}
-
-function showLoading(on) { document.getElementById('loading').className = on?'loading-overlay show':'loading-overlay'; }
-function showErr(msg) { const el=document.getElementById('upload-err'); el.textContent=msg; el.style.display='block'; }
-
-document.getElementById('drop-zone').addEventListener('dragover', e=>e.preventDefault());
-document.getElementById('drop-zone').addEventListener('drop', e=>{e.preventDefault();handleFile(e.dataTransfer.files[0]);});
 
 // ══════════════════════════════════════════════════════════════
 // DESIGN THUMBNAILS
