@@ -1102,13 +1102,13 @@ body.cmp-on .cmp-na{display:block;}
     <div class="card" style="padding:0;overflow:hidden">
       <div class="card-title" style="padding:14px 16px 0">By Customer <span style="font-weight:400;color:var(--text3);font-size:10px">— click a row for their returned styles</span></div>
       <table class="data-table"><thead><tr>
-        <th>#</th><th>Customer</th><th style="text-align:right">Returned</th><th style="text-align:right">Value</th><th style="text-align:right" title="Units dispatched BEFORE returns are taken off — this is the denominator the rate is measured against. Every other tab shows units net of returns.">Sold (gross)</th><th style="text-align:right">Rate</th><th style="text-align:center">Styles</th>
+        <th>#</th><th>Customer</th><th style="text-align:right">Returned</th><th style="text-align:right">Value</th><th style="text-align:right" title="Units dispatched, counted BEFORE returns are taken off — the rate is returned ÷ this. Every other tab shows units net of returns.">Sold (gross)</th><th style="text-align:right">Rate</th><th style="text-align:center">Styles</th>
       </tr></thead><tbody id="returns-cust-tbody"></tbody></table>
     </div>
     <div class="card" style="padding:0;overflow:hidden">
       <div class="card-title" style="padding:14px 16px 0">By Style <span style="font-weight:400;color:var(--text3);font-size:10px">— click a row for who returned it</span></div>
       <table class="data-table"><thead><tr>
-        <th>#</th><th>Style</th><th style="text-align:right">Returned</th><th style="text-align:right">Value</th><th style="text-align:right" title="Units dispatched BEFORE returns are taken off — this is the denominator the rate is measured against. Every other tab shows units net of returns.">Sold (gross)</th><th style="text-align:right">Rate</th><th style="text-align:center">Buyers</th>
+        <th>#</th><th>Style</th><th style="text-align:right">Returned</th><th style="text-align:right">Value</th><th style="text-align:right" title="Units dispatched, counted BEFORE returns are taken off — the rate is returned ÷ this. Every other tab shows units net of returns.">Sold (gross)</th><th style="text-align:right">Rate</th><th style="text-align:center" title="How many different buyers sent this style back — NOT how many bought it. 1 here means a single account returned it.">Buyers who returned</th>
       </tr></thead><tbody id="returns-style-tbody"></tbody></table>
     </div>
   </div>
@@ -2989,12 +2989,25 @@ function returnsGross() {
   return fa._retGross;
 }
 
-/** Returned units as a share of everything dispatched — the denominator is
- *  sold + returned, not sold alone, because a returned unit was still shipped.
- *  Returns null when nothing was dispatched at all (rate is undefined, not 0). */
+/** Returned units as a share of what was dispatched.
+ *
+ *  `gross` is units off the SALES rows, which already include the pieces that
+ *  later came back — a Goods Return is a separate row, it never removes the
+ *  original dispatch. So the denominator is `gross` alone. It used to be
+ *  `gross + ret`, which counted every returned piece twice and quietly
+ *  understated every rate on the dashboard (3 back out of 25 sold read 10.7%
+ *  instead of 12%; a buyer who returned all 3 of the 3 they were sent read
+ *  50% instead of 100%).
+ *
+ *  Returns null — never 0 — when nothing was dispatched at all, since the rate
+ *  is undefined rather than zero; every display path renders that as "—".
+ *
+ *  A rate ABOVE 100% is possible and deliberately not clamped: it means more
+ *  came back than the loaded window ever shipped, i.e. the matching sale sits
+ *  outside the date filter. Same reasoning as letting a net figure go
+ *  negative — hiding it would hide a real gap in the data. */
 function retRate(ret, gross) {
-  const denom = gross + ret;
-  return denom > 0 ? (ret / denom) * 100 : null;
+  return gross > 0 ? (ret / gross) * 100 : null;
 }
 function retRateColor(rate) {
   if (rate === null) return 'var(--text3)';
@@ -3123,7 +3136,7 @@ function renderReturns() {
     <div class="kpi-card" style="--ac:#c0392b"><div class="kpi-label">Units Returned</div><div class="kpi-value">${fN(T.totalQty)}</div><div class="kpi-sub">${T.custRows.length} ${clustered ? 'buyer groups' : 'customers'} · ${T.styleRows.length} styles</div></div>
     <div class="kpi-card" style="--ac:#b5622a"><div class="kpi-label">Return Value</div><div class="kpi-value">${fmt(T.totalRev)}</div><div class="kpi-sub">at billed price</div></div>
     <div class="kpi-card" style="--ac:#4a6fa5"><div class="kpi-label">Return Rate</div><div class="kpi-value">${rate === null ? '—' : rate.toFixed(1)+'%'}</div><div class="kpi-sub">of all units dispatched, same filter</div></div>
-    <div class="kpi-card" style="--ac:${worst ? retRateColor(worst.rate) : '#2a8a72'}"><div class="kpi-label">Worst Style</div><div class="kpi-value">${worst ? worst.rate.toFixed(1)+'%' : '—'}</div><div class="kpi-sub">${worst ? `#${esc(worst.n)} · ${fN(worst.qty)} of ${fN(worst.gross + worst.qty)} back` : `no style over ${minVol} units sold`}</div></div>`;
+    <div class="kpi-card" style="--ac:${worst ? retRateColor(worst.rate) : '#2a8a72'}"><div class="kpi-label">Worst Style</div><div class="kpi-value">${worst ? worst.rate.toFixed(1)+'%' : '—'}</div><div class="kpi-sub">${worst ? `#${esc(worst.n)} · ${fN(worst.qty)} of ${fN(worst.gross)} back` : `no style over ${minVol} units sold`}</div></div>`;
 
   // ── Sub cut rates ──
   const subCard = document.getElementById('returns-sub-card');
@@ -3134,7 +3147,7 @@ function renderReturns() {
     return `<div class="ret-sub-card" style="border-top-color:${scColor(s.name)}">
       <div class="ret-sub-name" style="color:${scColor(s.name)}">${esc(s.name)}</div>
       <div class="ret-sub-rate" style="color:${col}">${s.rate === null ? '—' : s.rate.toFixed(1)+'%'}</div>
-      <div class="ret-sub-meta">${fN(s.qty)} back of ${fN(s.gross + s.qty)} sent · ${s.styles} styles</div>
+      <div class="ret-sub-meta">${fN(s.qty)} back of ${fN(s.gross)} sent · ${s.styles} styles</div>
     </div>`;
   }).join('');
 
