@@ -299,8 +299,12 @@ function extractRow(colMap: ColumnMap, r: SheetRow): ParsedRow {
  * not in any tab — so these rows are dropped before anything else touches
  * them, for both sales and returns, rather than filtered out in just one
  * view. Add further confirmed void-markers here, not ad hoc per feature.
+ *
+ * "CANCEL" was added the same way (confirmed with the user, Sep 2026): it
+ * appears only in GOODS_RETURN — 1 row, 1 piece, style 9784, bill 88 of
+ * 05/Jun/26 — and is a cancellation marker, not a party.
  */
-const EXCLUDED_BUYERS = new Set(["CHANGE BARCODE"]);
+const EXCLUDED_BUYERS = new Set(["CHANGE BARCODE", "CANCEL"]);
 
 function isExcludedBuyer(name: unknown): boolean {
   return EXCLUDED_BUYERS.has(String(name ?? "").trim().toUpperCase());

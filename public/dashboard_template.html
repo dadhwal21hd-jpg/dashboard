@@ -2256,9 +2256,31 @@ function styleBuyers(sn) {
   for (const r of rows) {
     if (r.sn !== sn || !r.c) continue;
     let a = acc[r.c];
-    if (!a) a = acc[r.c] = {name:r.c, qty:0, rev:0, dates:new Set(), first:null, last:null};
-    a.qty += r.q; a.rev += r.q * r.p;
+    if (!a) a = acc[r.c] = {name:r.c, qty:0, gross:0, ret:0, rev:0, dates:new Set(), first:null, last:null};
+    a.qty += r.q; a.gross += r.q; a.rev += r.q * r.p;
     if (r.d) a.dates.add(r.d);
+  }
+
+  // Net this style's Goods Returns off the buyer who sent them back. Without
+  // this the buyer rows here were GROSS while the Style Numbers row above them
+  // (fa.styles) was already net of returns, so the two silently disagreed for
+  // any style that had ever come back. `gross` keeps the pre-return figure so
+  // the return rate has its own matched denominator (same rule as the Returns
+  // tab: returned ÷ (sold + returned)).
+  //
+  // Deliberately NOT touched, same as everywhere else returns net in:
+  // `.dates` — a return isn't a reorder, so Orders and the Verdict that reads
+  // it stay based on real dispatch dates.
+  const retRows = FILTERED_RETURNS.length < (D.returns_raw||[]).length ? FILTERED_RETURNS : (D.returns_raw||[]);
+  for (const r of retRows) {
+    if (r.sn !== sn || !r.c) continue;
+    let a = acc[r.c];
+    // A return with no matching sale in the current window still shows up —
+    // as a buyer whose net can go negative — rather than being dropped. Same
+    // deliberate choice as the server-side netting: hiding it would hide a
+    // real gap in the data.
+    if (!a) a = acc[r.c] = {name:r.c, qty:0, gross:0, ret:0, rev:0, dates:new Set(), first:null, last:null};
+    a.qty -= r.q; a.ret += r.q; a.rev -= r.q * r.p;
   }
 
   // Order Window (first → last) is deliberately read from the FULL, unfiltered
@@ -2314,6 +2336,9 @@ function styleBuyersHTML(sn) {
   const membership = D.cluster_membership || {};
 
   const totalQty = buyers.reduce((s,b) => s + b.qty, 0) || 1;
+  const totalRet = buyers.reduce((s,b) => s + (b.ret||0), 0);
+  const totalGross = buyers.reduce((s,b) => s + (b.gross||0), 0);
+  const styleRate = totalRet ? retRate(totalRet, totalGross) : null;
   const repeat   = buyers.filter(b => b.orders >= 2).length;
   const thin     = buyers.filter(b => b.orders === 1 && b.qty < 10).length;
   const conc     = ((buyers[0].qty / totalQty) * 100).toFixed(0);
@@ -2330,6 +2355,13 @@ function styleBuyersHTML(sn) {
   const rows = buyers.map((b,i) => {
     const v     = buyerVerdict(b, custQty[b.name] || b.qty);
     const share = ((b.qty / totalQty) * 100).toFixed(0);
+    // Rate against what this customer was actually sent of this style, not
+    // against the style's whole volume — retRate() returns null (rendered
+    // "—") when they were sent nothing at all.
+    const rRate = b.ret ? retRate(b.ret, b.gross) : null;
+    const retCell = b.ret
+      ? `<strong style="color:${retRateColor(rRate)}">${fN(b.ret)}</strong>${rRate===null?'':`<span style="display:block;font-size:9px;font-weight:400;color:var(--text3)">${rRate.toFixed(1)}%</span>`}`
+      : `<span style="color:var(--text3)">—</span>`;
     const cl    = membership[b.name];
     const clBadge = cl ? `<span class="badge bb" style="font-size:8px;margin-left:5px;background:#f5e6d3;color:var(--accent);border:1px solid var(--accent)" title="Part of group: ${esc(cl)}">⌒ ${esc(cl.length>16?cl.slice(0,14)+'…':cl)}</span>` : '';
     const span  = (b.first && b.last)
@@ -2338,7 +2370,8 @@ function styleBuyersHTML(sn) {
     return `<tr>
       <td style="color:var(--text3);font-family:'IBM Plex Mono',monospace;font-size:10px;width:26px">${i+1}</td>
       <td style="font-weight:500">${buyerLabel(b.name, i)}${clBadge}</td>
-      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700">${fN(b.qty)}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700">${fN(b.qty)}${b.ret?`<span style="display:block;font-size:9px;font-weight:400;color:var(--text3)">${fN(b.gross)} sent</span>`:''}</td>
+      <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-size:11px">${retCell}</td>
       <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text3)">${share}%</td>
       <td style="text-align:center">${freqBadge(b.orders)}</td>
       <td style="text-align:right;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text2)">${b.rev>0?fmt(b.rev):'—'}</td>
@@ -2357,12 +2390,14 @@ function styleBuyersHTML(sn) {
       <span class="sn-chip" title="Customers who ordered this style on more than one dispatch date">${repeat} repeat</span>
       <span class="sn-chip" title="Single order under 10 units — likely trial/sample">${thin} thin</span>
       <span class="sn-chip" title="Share of this style's units taken by its largest buyer">top buyer ${conc}%</span>
+      ${totalRet?`<span class="sn-chip" title="Units of this style returned across all buyers, and that as a share of everything dispatched of it">↩ ${fN(totalRet)} returned${styleRate===null?'':` · ${styleRate.toFixed(1)}%`}</span>`:''}
       ${grouped.size?`<span class="sn-chip" title="Some buyers belong to the same customer group — they are not independent">⌒ ${grouped.size} group${grouped.size===1?'':'s'} involved</span>`:''}
     </div>
     <table class="sn-cust-table">
       <thead><tr>
         <th>#</th><th>Customer</th>
-        <th style="text-align:right">Units</th>
+        <th style="text-align:right" title="Units dispatched to this customer, less anything they returned">Units (net)</th>
+        <th style="text-align:right" title="Units of this style this customer sent back (Goods Returns), and that as a share of what they were sent">Returned</th>
         <th style="text-align:right">Share</th>
         <th style="text-align:center">Orders</th>
         <th style="text-align:right">Revenue</th>
