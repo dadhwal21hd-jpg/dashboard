@@ -23,6 +23,11 @@ import { unstable_cache } from "next/cache";
 export type StockMap = Record<string, number>;
 
 const TABLE = "stock_available";
+// PostgREST enforces its own max-rows cap (1,000 on this project — asking for
+// more silently returns 1,000), so the loop below must page until a request
+// comes back EMPTY rather than until one comes back short. Breaking on a
+// short page would drop every row past the cap the moment the table grows
+// past a multiple of it.
 const PAGE = 1000;
 const REVALIDATE_SECONDS = 5 * 60; // stock moves with dispatch; same window as the sheet cache
 const CACHE_TAG = "stock-map";
@@ -33,7 +38,6 @@ export function stockConfigured(): boolean {
 
 interface StockRow {
   style: string | number | null;
-  brand: string | null;
   available: number | string | null;
 }
 
@@ -44,7 +48,13 @@ async function computeStockMap(): Promise<StockMap> {
   const out: StockMap = {};
 
   for (let offset = 0; ; offset += PAGE) {
-    const url = `${base}/rest/v1/${TABLE}?select=style,brand,available&limit=${PAGE}&offset=${offset}`;
+    // `order=style` is load-bearing, not cosmetic: limit/offset paging over an
+    // UNORDERED query is undefined in Postgres — the database may hand back
+    // rows in a different order per request, so a row can appear in two pages
+    // (double-counted) or in none (silently missing). Ordering on `style`,
+    // which is unique here (1,071 rows, 1,071 distinct styles), makes the
+    // page boundaries stable.
+    const url = `${base}/rest/v1/${TABLE}?select=style,available&order=style&limit=${PAGE}&offset=${offset}`;
     const res = await fetch(url, {
       headers: { apikey: key, Authorization: `Bearer ${key}` },
       cache: "no-store",
@@ -52,6 +62,7 @@ async function computeStockMap(): Promise<StockMap> {
     if (!res.ok) throw new Error(`stock fetch failed: ${res.status} ${await res.text()}`);
 
     const rows = (await res.json()) as StockRow[];
+    if (rows.length === 0) break;
     for (const r of rows) {
       const sn = String(r.style ?? "").trim();
       if (!sn) continue;
@@ -61,7 +72,6 @@ async function computeStockMap(): Promise<StockMap> {
       // duplicate silently drop units.
       out[sn] = (out[sn] ?? 0) + qty;
     }
-    if (rows.length < PAGE) break;
   }
   return out;
 }

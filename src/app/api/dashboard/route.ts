@@ -63,13 +63,18 @@ export async function GET(req: NextRequest) {
     // orders* are sent: the client needs presence, not Drive IDs (the image
     // route resolves those server-side), and the catalogue is much larger
     // than the order book.
-    const designMap = await fetchDesignMap(force);
-
     // Stock on hand (optional, R-Studio only — see src/lib/stock.ts). Only
     // styles that actually appear in the orders are sent: the stock table is
     // bigger than what's been sold, and the dashboard only ever shows stock
     // next to a style it is already listing.
-    const stockMap = await fetchStockMap(force);
+    //
+    // Fetched *alongside* the design map, not after it: they're independent
+    // reads of two different services, and a cold instance pays both round
+    // trips in full, so running them in series showed up as a slower page.
+    const [designMap, stockMap] = await Promise.all([
+      fetchDesignMap(force),
+      fetchStockMap(force),
+    ]);
     const ordered = new Set(data.raw.map((r) => r.sn));
     const designStyles = Object.keys(designMap).filter((sn) => ordered.has(sn));
     const stock: Record<string, number> = {};
