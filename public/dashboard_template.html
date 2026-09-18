@@ -1742,6 +1742,29 @@ function brandBadge(sn) {
   return `<span class="badge ${BRAND_BADGE_CLASS[b]}" style="font-size:9px" title="Brand: Item Description is ground truth (GOWN=R-Studio, KK GOWN=KK, non-Gown=Other); numeric style-number rule is only a fallback">${BRAND_LABEL[b]}</span>`;
 }
 
+// ══════════════════════════════════════════════════════════════
+// STOCK ON HAND (Supabase `stock_available`, R-Studio only)
+// D._stock is style number → units available. A style that isn't in it has
+// NO KNOWN stock figure — which is not the same as zero — so everything here
+// returns null for "unknown" and the display renders that as "—". KK and
+// non-Gown styles are never in the table at all, so they always show "—".
+// ══════════════════════════════════════════════════════════════
+function stockOf(sn) {
+  const m = D._stock;
+  if (!m) return null;
+  const v = m[sn];
+  return typeof v === 'number' ? v : null;
+}
+
+/** Units-available cell for a style. Green when there's stock, grey zero when
+ *  the table says none left, "—" when the style has no stock row at all. */
+function stockCell(sn) {
+  const v = stockOf(sn);
+  if (v === null) return `<span style="color:var(--text3);font-family:'IBM Plex Mono',monospace;font-size:11px" title="No stock record for this style (the stock table covers R-Studio only)">—</span>`;
+  const col = v > 0 ? '#2a8a72' : '#b0aaa2';
+  return `<span style="color:${col};font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:${v>0?700:400}" title="Units available to sell right now">${fN(v)}</span>`;
+}
+
 /** True when any control in the global filter bar would narrow the data —
  *  used to decide whether drill-downs must recompute from FILTERED_RAW
  *  instead of trusting the server's unfiltered precomputed drill data. */
@@ -2454,6 +2477,7 @@ function renderSG() {
         <td style="color:var(--text3);font-family:IBM Plex Mono,monospace;font-size:11px;padding:7px 12px;width:32px"><span class="sn-chev">▸</span>${i+1}</td>
         <td style="padding:5px 12px"><div style="display:flex;align-items:center;gap:9px">${designThumb(s.n,'sm')}<strong style="font-family:IBM Plex Mono,monospace;color:${col}">#${s.n}</strong>${BRAND_FILTER==='all'?brandBadge(s.n):''}</div></td>
         <td style="padding:7px 12px"><div style="display:flex;align-items:center;gap:8px"><div style="width:100px;background:#f0ede8;height:6px;border-radius:3px"><div style="width:${pct}%;height:100%;background:${col};border-radius:3px;opacity:.75"></div></div><strong style="font-family:IBM Plex Mono,monospace;font-size:13px;color:${col};min-width:24px">${s.qty}</strong>${star}</div></td>
+        <td style="text-align:right;padding:7px 12px">${stockCell(s.n)}</td>
         <td style="text-align:right;font-family:IBM Plex Mono,monospace;font-size:12px;color:var(--text2);padding:7px 12px">${fmt(s.rev)}</td>
         <td style="text-align:right;font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--text3);padding:7px 12px">${s.price?'₹'+fN(s.price):'—'}</td>
         <td style="text-align:center;font-family:IBM Plex Mono,monospace;font-size:12px;padding:7px 12px"><span style="color:var(--accent);border-bottom:1px dotted var(--accent);font-weight:600">${s.cust} ▾</span></td>
@@ -2472,7 +2496,7 @@ function renderSG() {
         </div>
       </div>
       <div class="sg-body" id="sb-${gi}">
-        <table class="sg-inner-table"><thead><tr><th>#</th><th>Style No.</th><th>Units Sold</th><th style="text-align:right">Revenue</th><th style="text-align:right">MRP</th><th style="text-align:center">Customers</th><th style="text-align:right">Run Rate</th></tr></thead><tbody>${rows}</tbody></table>
+        <table class="sg-inner-table"><thead><tr><th>#</th><th>Style No.</th><th>Units Sold</th><th style="text-align:right" title="Units available to sell right now (R-Studio stock table)">In Stock</th><th style="text-align:right">Revenue</th><th style="text-align:right">MRP</th><th style="text-align:center">Customers</th><th style="text-align:right">Run Rate</th></tr></thead><tbody>${rows}</tbody></table>
       </div></div>`;
   }).join('');
   }
@@ -2996,6 +3020,7 @@ function redrawStyleTable() {
       </div></td>
       <td style="padding:7px 10px;text-align:center">${freqBadge(s.freq||1)}</td>
       <td style="padding:7px 10px;text-align:right">${globalBadge}</td>
+      <td style="padding:7px 10px;text-align:right">${stockCell(s.n)}</td>
       <td style="padding:7px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--text2)">${s.rev>0?fmt(s.rev):'—'}</td>
       <td style="padding:7px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text3)">${s.price?'₹'+fN(s.price):'—'}</td>
     </tr>`;
@@ -3009,6 +3034,7 @@ function redrawStyleTable() {
         <th style="padding:7px 10px;text-align:left;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">This Customer</th>
         <th style="padding:7px 10px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Reorder Freq</th>
         <th style="padding:7px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">All Customers Total</th>
+        <th style="padding:7px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)" title="Units available to sell right now (R-Studio stock table)">In Stock</th>
         <th style="padding:7px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Revenue</th>
         <th style="padding:7px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">MRP</th>
       </tr></thead>

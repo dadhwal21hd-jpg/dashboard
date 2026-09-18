@@ -34,6 +34,7 @@ import { process as runProcessor } from "@/lib/processor";
 import { fetchDesignMap, designsConfigured } from "@/lib/designs";
 import { getStableDesignToken } from "@/lib/signing";
 import { clearDriveCache } from "@/lib/drive";
+import { fetchStockMap } from "@/lib/stock";
 
 export const dynamic = "force-dynamic"; // never statically cache this route
 
@@ -63,8 +64,18 @@ export async function GET(req: NextRequest) {
     // route resolves those server-side), and the catalogue is much larger
     // than the order book.
     const designMap = await fetchDesignMap(force);
+
+    // Stock on hand (optional, R-Studio only — see src/lib/stock.ts). Only
+    // styles that actually appear in the orders are sent: the stock table is
+    // bigger than what's been sold, and the dashboard only ever shows stock
+    // next to a style it is already listing.
+    const stockMap = await fetchStockMap(force);
     const ordered = new Set(data.raw.map((r) => r.sn));
     const designStyles = Object.keys(designMap).filter((sn) => ordered.has(sn));
+    const stock: Record<string, number> = {};
+    for (const [sn, qty] of Object.entries(stockMap)) {
+      if (ordered.has(sn)) stock[sn] = qty;
+    }
 
     // The template lives in a blob-URL iframe (opaque origin), so it can't use
     // relative URLs or send our cookie. Give it an absolute base + a signed
@@ -90,6 +101,8 @@ export async function GET(req: NextRequest) {
       _designs:       designStyles,
       _design_base:   designsConfigured() ? `${origin}/api/design` : "",
       _design_token:  designsConfigured() ? await getStableDesignToken(session.user.email) : "",
+      // Units available per style (R-Studio only; {} when not configured).
+      _stock:         stock,
     };
 
     const injected = template.replace(

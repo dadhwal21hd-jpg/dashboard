@@ -111,4 +111,9 @@ export interface DashboardData {
   _design_base?: string;
   /** Signed, expiring token authorising design-image reads. */
   _design_token?: string;
+  /** Style number → units available (Supabase `stock_available`). R-Studio
+   *  only — a style absent here has no known stock figure, which is not the
+   *  same as zero, so the client renders it as "—". Empty when stock isn't
+   *  configured or the table was unreadable. */
+  _stock?: Record<string, number>;
 }
