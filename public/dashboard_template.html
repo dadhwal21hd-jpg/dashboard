@@ -1007,8 +1007,9 @@ body.cmp-on .cmp-na{display:block;}
           <select id="drill-top-n" onchange="redrawStyleTable()" style="padding:4px 8px;font-size:12px">
             <option value="10">Top 10</option>
             <option value="15">Top 15</option>
-            <option value="20">Top 20</option>
-            <option value="999">All (up to 25)</option>
+            <option value="25">Top 25</option>
+            <option value="60">Top 60</option>
+            <option value="999">All</option>
           </select>
           <span class="filter-label">Sort by:</span>
           <select id="drill-sort" onchange="redrawStyleTable()" style="padding:4px 8px;font-size:12px">
@@ -1473,7 +1474,7 @@ function brandBadge(sn) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// STOCK ON HAND (Supabase `stock_available`, R-Studio only)
+// STOCK ON HAND (Supabase `stock_available` R-Studio + `kk_stock_available` KK)
 // D._stock is style number → units available. A style that isn't in it has
 // NO KNOWN stock figure — which is not the same as zero — so everything here
 // returns null for "unknown" and the display renders that as "—". KK and
@@ -1490,7 +1491,7 @@ function stockOf(sn) {
  *  the table says none left, "—" when the style has no stock row at all. */
 function stockCell(sn) {
   const v = stockOf(sn);
-  if (v === null) return `<span style="color:var(--text3);font-family:'IBM Plex Mono',monospace;font-size:11px" title="No stock record for this style (the stock table covers R-Studio only)">—</span>`;
+  if (v === null) return `<span style="color:var(--text3);font-family:'IBM Plex Mono',monospace;font-size:11px" title="No stock record for this style (no row in the R-Studio or KK stock tables)">—</span>`;
   const col = v > 0 ? '#2a8a72' : '#b0aaa2';
   return `<span style="color:${col};font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:${v>0?700:400}" title="Units available to sell right now">${fN(v)}</span>`;
 }
@@ -2226,7 +2227,7 @@ function renderSG() {
         </div>
       </div>
       <div class="sg-body" id="sb-${gi}">
-        <table class="sg-inner-table"><thead><tr><th>#</th><th>Style No.</th><th>Units Sold</th><th style="text-align:right" title="Units available to sell right now (R-Studio stock table)">In Stock</th><th style="text-align:right">Revenue</th><th style="text-align:right">MRP</th><th style="text-align:center">Customers</th><th style="text-align:right">Run Rate</th></tr></thead><tbody>${rows}</tbody></table>
+        <table class="sg-inner-table"><thead><tr><th>#</th><th>Style No.</th><th>Units Sold</th><th style="text-align:right" title="Units available to sell right now (R-Studio + KK stock tables)">In Stock</th><th style="text-align:right">Revenue</th><th style="text-align:right">MRP</th><th style="text-align:center">Customers</th><th style="text-align:right">Run Rate</th></tr></thead><tbody>${rows}</tbody></table>
       </div></div>`;
   }).join('');
   }
@@ -2611,7 +2612,6 @@ function openDrillByName(custName, rowEl) {
     for (const [sc, v] of Object.entries(scAcc)) {
       const topStyles = Object.entries(v.styles)
         .sort((a,b) => b[1].qty - a[1].qty)
-        .slice(0, 25)
         .map(([sn, s]) => ({
           n: sn, qty: s.qty, rev: Math.round(s.rev),
           price: s.price, freq: s.dates.size
@@ -2723,7 +2723,7 @@ function redrawStyleTableCompare() {
   const k = sortBy === 'rev' ? 'rev' : 'qty';          // reorder frequency isn't per-year; falls back to units
   let styles = Object.entries(_curSCData.styles).map(([n, v]) => ({ n, v }));
   styles.sort((a, b) => (b.v[last][k] - a.v[last][k]) || (b.v.reduce((t, x) => t + x[k], 0) - a.v.reduce((t, x) => t + x[k], 0)));
-  styles = styles.slice(0, topN === 999 ? 50 : topN);
+  styles = styles.slice(0, topN);
   const maxQ = Math.max(1, ...styles.flatMap(s => s.v.map(x => x.qty)));
   const th = 'padding:7px 10px;font-family:\'IBM Plex Mono\',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)';
   document.getElementById('drill-style-table').innerHTML = `
@@ -2799,7 +2799,7 @@ function redrawStyleTable() {
         <th style="padding:7px 10px;text-align:left;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">This Customer</th>
         <th style="padding:7px 10px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Reorder Freq</th>
         <th style="padding:7px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">All Customers Total</th>
-        <th style="padding:7px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)" title="Units available to sell right now (R-Studio stock table)">In Stock</th>
+        <th style="padding:7px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)" title="Units available to sell right now (R-Studio + KK stock tables)">In Stock</th>
         <th style="padding:7px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Revenue</th>
         <th style="padding:7px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">MRP</th>
       </tr></thead>

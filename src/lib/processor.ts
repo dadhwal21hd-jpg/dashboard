@@ -502,9 +502,9 @@ export function process(rowsIn: SheetRow[], returnRowsIn: SheetRow[] = []): Dash
       return { m: `${monthNames[parseInt(mo) - 1]} ${y.slice(2)}`, q };
     });
 
-  // ── Drill-down: ALL customers, top 10 SCs each, top 25 styles each ─────
-  // (Original Python script capped at top 30; removed for web app since
-  // payload is fetched on demand and customer counts are well under 1000.)
+  // ── Drill-down: ALL customers, top 10 SCs each, ALL styles in each ──────
+  // (No style cap: a customer can have 600+ styles in one sub cut and the
+  // client picks how many to show. Originally capped at 25.)
   const drillJson: DrillData = {};
   const allCustNames = customers.map((c) => c.name);
   for (const cust of allCustNames) {
@@ -527,7 +527,6 @@ export function process(rowsIn: SheetRow[], returnRowsIn: SheetRow[] = []): Dash
       for (const v of styles.values()) scRev += v.rev;
       const styleArr = [...styles.entries()]
         .sort((a, b) => b[1].qty - a[1].qty)
-        .slice(0, 25)
         .map(([sn, v]) => ({
           n: sn,
           qty: v.qty,
@@ -643,7 +642,7 @@ export function process(rowsIn: SheetRow[], returnRowsIn: SheetRow[] = []): Dash
       }
     }
 
-    // Shape into final structure: top 10 sub-cuts, top 25 styles each
+    // Shape into final structure: top 10 sub-cuts, all styles each
     const scEntries: [string, SubMerge][] = [...subMerge.entries()];
     scEntries.sort((a, b) => b[1].qty - a[1].qty);
     const topScs = scEntries.slice(0, 10);
@@ -652,7 +651,6 @@ export function process(rowsIn: SheetRow[], returnRowsIn: SheetRow[] = []): Dash
     for (const [sc, sm] of topScs) {
       const topStyles = [...sm.styles.entries()]
         .sort((a, b) => b[1].qty - a[1].qty)
-        .slice(0, 25)
         .map(([sn, s]) => ({ n: sn, qty: s.qty, rev: bankRound(s.rev), price: s.price, freq: s.freq }));
       scData[sc] = { qty: sm.qty, rev: bankRound(sm.rev), styles: topStyles };
     }
