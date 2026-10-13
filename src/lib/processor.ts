@@ -164,6 +164,7 @@ const STYLE_ALIASES     = ["style number", "style_number", "style no", "style"];
 const SUBCUT_ALIASES    = ["sub cut style", "sub_cut_style", "subcut", "cut style", "sub cut"];
 const DESIGN_ALIASES    = ["design"];
 const ITEM_DESC_ALIASES = ["item description", "item_description"];
+const REMARKS_ALIASES   = ["remarks"];
 
 interface ColumnMap {
   qty: string;
@@ -182,6 +183,9 @@ interface ColumnMap {
    *  Gown-family rows (which the brand split applies to) from everything
    *  else, not surfaced verbatim to the client. */
   itemDesc?: string;
+  /** Oracle's "Remarks" — carries the fabric tag ("FABRIC CRAPE …") that
+   *  separates Labotanica from the suits. Sales only; absent on returns. */
+  remarks?: string;
 }
 
 /** Case-insensitive column detection, tolerant of either shape: dedicated
@@ -206,6 +210,7 @@ function detectColumns(headers: string[], sourceLabel: string): ColumnMap {
   for (const c of SUBCUT_ALIASES)    if (c in headersLower) { colMap.subcut   = headersLower[c]; break; }
   for (const c of DESIGN_ALIASES)    if (c in headersLower) { colMap.design   = headersLower[c]; break; }
   for (const c of ITEM_DESC_ALIASES) if (c in headersLower) { colMap.itemDesc = headersLower[c]; break; }
+  for (const c of REMARKS_ALIASES)   if (c in headersLower) { colMap.remarks  = headersLower[c]; break; }
 
   if (!colMap.style && !colMap.design) {
     throw new Error(
@@ -217,7 +222,16 @@ function detectColumns(headers: string[], sourceLabel: string): ColumnMap {
   return colMap as ColumnMap;
 }
 
-export type Brand = "kk" | "rstudio" | "other" | "unknown";
+/**
+ * kk · rstudio  — gowns (Item Description)
+ * labotanica    — fabric
+ * unstitched    — suits: SAAR (4-digit designs) and RAAS ("E-" designs),
+ *                 deliberately kept together for now — see classifyBrand
+ * other         — a line that matches nothing above (e.g. DUPATTA); shown as
+ *                 "Unclassified" so it is visible rather than guessed at
+ * unknown       — blank Item Description
+ */
+export type Brand = "kk" | "rstudio" | "labotanica" | "unstitched" | "other" | "unknown";
 
 /**
  * Authoritative per-row brand classification. Item Description is GROUND
@@ -241,12 +255,48 @@ export type Brand = "kk" | "rstudio" | "other" | "unknown";
  * all (old-sheet shape) — there's no signal to say otherwise there, and
  * every row in that shape *was* Gown-family in practice.
  */
-export function classifyBrand(itemDesc: string | undefined, sn: string): Brand {
+export function classifyBrand(
+  itemDesc: string | undefined,
+  sn: string,
+  ctx: { design?: string; remarks?: string } = {},
+): Brand {
   if (itemDesc !== undefined) {
     const d = itemDesc.trim().toUpperCase();
     if (!d) return "unknown";
-    if (!d.includes("GOWN")) return "other";
-    return d.startsWith("KK") ? "kk" : "rstudio";
+
+    // 1. Gowns — the description alone decides (confirmed with the user,
+    //    Oct 2026): "GOWN…" is R-Studio, "KK GOWN…" is KK.
+    if (d.includes("GOWN")) return d.startsWith("KK") ? "kk" : "rstudio";
+
+    // Not a gown. Everything Oracle bills here is fabric or suits.
+    if (d.startsWith("DUPATTA")) return "other";           // deliberately not guessed
+
+    const design = (ctx.design ?? "").trim();
+    const remarks = (ctx.remarks ?? "").trim();
+
+    // 2. Suits. SAAR and RAAS are NOT split for now (user's call, Oct 2026) —
+    //    both are "unstitched". How to tell them apart, if that is wanted later:
+    //      SAAR = plain 4-digit design (1360) / description "SAARR …"
+    //      RAAS = design prefix "E-" (E-21173C, 5-digit)
+    //    (user-confirmed Oct 2026: "E- is all RAAS", "4-digit is SAAR").
+    //    The E- test comes BEFORE the remarks test on purpose: RAAS lines carry
+    //    remarks ("FABRIC CRAPE …") that would otherwise read as fabric.
+    if (d.startsWith("SAAR") || d.startsWith("RAAS")) return "unstitched";
+    if (/^E-/i.test(design)) return "unstitched";
+
+    // 3. Labotanica (fabric): "P-" designs are all Labotanica (user-confirmed).
+    //    Also remarks, any other "<letter>-" prefix (O-KA.1034 brocade) and
+    //    "FABRIC" in the description — O- was NOT specified by the user; it is
+    //    fabric by description, so it stays here.
+    if (/^[A-Za-z]-/.test(design) || remarks || d.includes("FABRIC")) return "labotanica";
+
+    // 4. Plain 4- or 5-digit design numbers (1360, "DENVER 1290") are suits.
+    const digits = design.match(/\d+/);
+    if (digits && (digits[0].length === 4 || digits[0].length === 5)) return "unstitched";
+
+    // 5. Anything else Oracle bills that is not a gown or a suit is fabric
+    //    (the "PRINTED FABRIC" lines, and "ARMANI BROCADE" with no design).
+    return "labotanica";
   }
   // No Item Description column — numeric/prefix fallback (old-sheet shape).
   const s = String(sn || "").trim();
@@ -254,6 +304,14 @@ export function classifyBrand(itemDesc: string | undefined, sn: string): Brand {
   if (/^(NR|CH)-?/i.test(s)) return "rstudio";
   if (/^\d+$/.test(s)) return Number(s) < 50000 ? "kk" : "rstudio";
   return "unknown";
+}
+
+/** Fabric "sub cut": the fabric name from the Item Description — its first two
+ *  words, skipping bare numbers ("CRAPE D/P NEW RANGE 3 …" → "CRAPE D/P"). */
+function fabricName(itemDesc: string | undefined): string {
+  const words = String(itemDesc ?? "").toUpperCase().replace(/[\[\]]/g, " ").split(/\s+/)
+    .filter((w) => w && !/^[\d.]+$/.test(w));
+  return words.slice(0, 2).join(" ").replace(/[.,]+$/, "") || "FABRIC";
 }
 
 interface ParsedRow {
@@ -285,7 +343,24 @@ function extractRow(colMap: ColumnMap, r: SheetRow): ParsedRow {
     sc = parsed?.subcut || "Unknown";
   }
 
-  const brand = classifyBrand(colMap.itemDesc ? r[colMap.itemDesc] : undefined, sn);
+  const itemDesc = colMap.itemDesc ? r[colMap.itemDesc] : undefined;
+  const design = colMap.design ? String(r[colMap.design] ?? "").trim() : "";
+  const remarks = colMap.remarks ? String(r[colMap.remarks] ?? "").trim() : "";
+  const brand = classifyBrand(itemDesc, sn, { design, remarks });
+
+  // Fabric and suit designs are not "<cut>.<style>" like gowns, so they get
+  // their own labelling. The style keeps its FULL design code: stripping the
+  // "E-" prefix would make 3 fabric codes equal real gown style numbers
+  // (9033, 9101, 9124), mixing up stock and photos.
+  if (brand === "labotanica") {
+    sn = design || "Unknown";
+    sc = fabricName(itemDesc);
+  } else if (brand === "unstitched") {
+    // Grouped by cloth, same as fabric; the "SAARR"/"RAAS" brand word is
+    // dropped so SAAR and RAAS crape sit under one "CRAPE PURE" cut.
+    sn = design || "Unknown";
+    sc = fabricName((itemDesc ?? "").replace(/^\s*(SAARR?|RAAS)\s+/i, ""));
+  }
   return { cust, sc, sn, qty, price, date, brand };
 }
 

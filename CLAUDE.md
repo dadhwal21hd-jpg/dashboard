@@ -251,6 +251,66 @@ cold took 8.6s with 0 failures, and the **identical burst repeated
 immediately after took 94ms total** — the whole point of a shared cache
 being warm rather than each instance re-paying Drive's cost independently.
 
+## Data source + four brands (Oct 2026 cutover) — read before the sections below
+
+**Sales and returns now come from Supabase, not the Google Sheet.**
+[src/lib/oracle.ts](src/lib/oracle.ts) reads `oracle_bill_lines` (sales) and
+`oracle_gr_report` (Goods Return) with `PROJECT_URL`/`ANON_KEY` (same project
+as the stock tables) and hands back rows in the old header-keyed shape, so
+`processor.ts` has one input path. [src/lib/sheets.ts](src/lib/sheets.ts) is
+only the fallback when those env vars are absent; if Supabase is configured and
+fails, the route errors rather than quietly showing stale sheet data.
+
+Rules that came with the data (from the WIP_HEART side):
+- **Price is `SP`** (unit selling price); `BP` is empty on API lines. Revenue = qty × SP.
+- **Never drop a line because `gone_since` is set** — Oracle removed it, but the
+  piece left, so it counts as sold. Older deleted bills were backfilled as
+  `source='dash'`.
+- **`oracle_gr_report` is emptied and reloaded twice a day.** A read under 300
+  rows or under half the last good one keeps the previous figures
+  (`fetchOracleReturns`), instead of reading zero returns.
+- A bill is Bill_No + Bill_Dt + buyer; bill numbers repeat across Oracle's books.
+- Buyer names fold through `party_aliases`, **except** own-people accounts
+  (Prakash Ji, Ankur Ji, Pathak Ji, Kriti, Jyoti, Manoj Ji, Raja Sir): the alias
+  table maps some of them onto real customers (e.g. "prakash ji" → "Dimple
+  Fashion"), which would bury internal dispatches in a customer's revenue.
+- The ledger starts **1 Apr 2026**. The 2021–Mar 2026 history lives only in the
+  DASH sheet and is not read any more (see the open question in the hand-off).
+- Cached per lambda instance for 5 min (a 17.8k-row read is ~3.5 MB, over the
+  2 MB Next Data Cache limit, same reasoning as sheets.ts).
+
+**Four brands**, decided in `classifyBrand()` in order (user-confirmed Oct 2026):
+1. Item Description contains `GOWN` → `KK` if it starts "KK", else **R-Studio**.
+2. Starts with `SAAR`/`RAAS`, or design prefix **`E-`** → **Unstitched** (suits).
+   "E- is all RAAS" (user). Checked before the remarks test: RAAS lines carry
+   "FABRIC …" remarks that would otherwise read as fabric.
+3. Any other `<letter>-` design prefix (**`P-`** is all Labotanica — user), remarks,
+   or "FABRIC" in the description → **Labotanica** (fabric). `O-` (brocade /
+   Banarsi, 177 lines) was not specified; it stays here as fabric.
+4. Plain 4- or 5-digit design number (1360, "DENVER 1290") → **Unstitched**
+   ("4-digit is SAAR" — user).
+5. Anything else → Labotanica (the PRINTED FABRIC lines, no design). `DUPATTA` →
+   "other" (shown as Unclassified, on purpose).
+
+SAAR and RAAS are **deliberately not split** — the owners asked to see them
+together as Unstitched for now. They are already identifiable if that changes:
+SAAR = plain 4-digit design / "SAARR" description (2,022 lines, ₹2.6 Cr);
+RAAS = `E-` designs (5,703 lines, ₹12.2 Cr). Split in rule 2/4 of classifyBrand.
+
+Labelling for the two new brands (`extractRow`): sub cut = cloth name, the first
+two words of the Item Description minus the SAARR/RAAS word ("CRAPE PURE",
+"SUSHE SILK"); the style keeps its **full design code** ("E-19551G", "1360").
+Do not strip the prefix: 3 fabric codes (9033, 9101, 9124) equal real gown style
+numbers and would mix up stock and photos.
+
+**Units are not comparable across brands.** Only "PRINTED FABRIC" (68,777 of
+Labotanica's 76,890 units, ~₹75 each) is clearly metres; gowns and suits count
+pieces/sets. With the brand filter on "All" they are added together.
+
+Customer drill: a "By brand" strip (units · revenue · share, net of returns)
+sits above the sub-cut cards, each card carries a brand tag, and style rows
+show a brand badge when the filter is on All. The strip is not shown in Compare mode.
+
 ## Brand split (KK vs R-Studio vs Other/Non-Gown)
 
 **Authoritative classification is server-side and Item-Description-first**:

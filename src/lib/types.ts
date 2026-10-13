@@ -77,7 +77,7 @@ export interface RawRow {
    *  the numeric/prefix rule only for sheets with no Item Description column
    *  (old shape). Client code should read this directly rather than
    *  re-deriving brand from `sn`. */
-  br: "kk" | "rstudio" | "other" | "unknown";
+  br: "kk" | "rstudio" | "labotanica" | "unstitched" | "other" | "unknown";
 }
 
 export interface DashboardData {

@@ -79,6 +79,7 @@ select:focus,input:focus{outline:none;border-color:var(--accent);}
 .br{background:#fdeaea;color:#c0392b;border:1px solid #f0c0c0;}
 .bc{background:#e6f4f1;color:#2a8a72;border:1px solid #b0ddd4;}
 .bb{background:#e8eef7;color:#4a6fa5;border:1px solid #baccdf;}
+.bp{background:#f1eaf7;color:#7a5195;border:1px solid #d9c8e8;}
 
 /* ─── TREND ──────────────────────────────────────────────────────── */
 .trend-chart{height:180px;width:100%;margin-top:4px;}
@@ -871,12 +872,13 @@ body.cmp-on .cmp-na{display:block;}
   <div style="width:1px;height:20px;background:var(--border);margin:0 4px"></div>
 
   <span class="filter-label">🏷️ Brand:</span>
-  <select id="brand-filter" onchange="applyGlobalFilter()" title="Under 50,000 = KK · 50,000+ or NR-xxx/CH-xxx = R-Studio · non-Gown items (Item Description) = Other">
+  <select id="brand-filter" onchange="applyGlobalFilter()" title="Item Description: GOWN = R-Studio · KK GOWN = KK. Suits (SAAR 4-digit designs + RAAS E- designs) = Unstitched · fabric (P- designs, printed fabric) = Labotanica">
     <option value="all">All Brands</option>
     <option value="kk">KK</option>
     <option value="rstudio">R-Studio</option>
-    <option value="other">Other / Non-Gown</option>
-    <option value="unknown">Unclassified</option>
+    <option value="labotanica">Labotanica (Fabric)</option>
+    <option value="unstitched">Unstitched (Suits)</option>
+    <option value="other">Unclassified</option>
   </select>
 
   <div style="width:1px;height:20px;background:var(--border);margin:0 4px"></div>
@@ -992,6 +994,7 @@ body.cmp-on .cmp-na{display:block;}
       </div>
       <button onclick="closeDrill()" class="btn btn-outline btn-sm">✕ Close</button>
     </div>
+    <div id="drill-brands" style="display:none;padding:10px 18px;border-bottom:1px solid var(--border);background:#fffdfb;gap:8px;align-items:center;flex-wrap:wrap"></div>
     <div style="padding:14px 18px;border-bottom:1px solid var(--border)">
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);font-family:'IBM Plex Mono',monospace;margin-bottom:10px">Top Sub Cut Styles — click to see style numbers</div>
       <div id="drill-sc-cards" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px"></div>
@@ -1198,7 +1201,7 @@ let DATE_TO   = null;
 let activeCustRow = null;
 let FILTER_MIN_QTY = 0, FILTER_MAX_QTY = Infinity;
 let FILTER_MIN_PRICE = 0, FILTER_MAX_PRICE = Infinity;
-let BRAND_FILTER = 'all'; // 'all' | 'kk' | 'rstudio' | 'unknown'
+let BRAND_FILTER = 'all'; // 'all' | 'kk' | 'rstudio' | 'labotanica' | 'unstitched' | 'other'
 let _FA = null;          // cached filteredAnalytics result
 let _globalStyleMap = null;
 let _curSC = null, _curSCData = null;
@@ -1446,12 +1449,15 @@ function requestCustomerUnlock(custName) {
 // caught immediately — don't trust a small window to represent the whole
 // history's edge cases again.
 // ══════════════════════════════════════════════════════════════
-const BRAND_LABEL = { kk: 'KK', rstudio: 'R-Studio', other: 'Other / Non-Gown', unknown: 'Unclassified' };
-const BRAND_BADGE_CLASS = { kk: 'bg', rstudio: 'bb', other: 'bc', unknown: 'br' };
+const BRAND_LABEL = { kk: 'KK', rstudio: 'R-Studio', labotanica: 'Labotanica', unstitched: 'Unstitched', other: 'Unclassified', unknown: 'Unclassified' };
+const BRAND_BADGE_CLASS = { kk: 'bg', rstudio: 'bb', labotanica: 'bc', unstitched: 'bp', other: 'br', unknown: 'br' };
+// Display order everywhere brands are listed together.
+const BRAND_ORDER = ['rstudio', 'kk', 'labotanica', 'unstitched', 'other'];
 
 /** Brand for one raw row — just reads the server-computed r.br. */
 function rowBrand(r) {
-  return (r && r.br) || 'unknown';
+  const b = (r && r.br) || 'other';
+  return b === 'unknown' ? 'other' : b;
 }
 
 // sn -> br, built once from the full (unfiltered) history — a style number's
@@ -2623,6 +2629,9 @@ function openDrillByName(custName, rowEl) {
     drillData = (isCluster ? D.clustered_drill?.[custName] : D.drill?.[custName]) || {};
   }
 
+  // Who this drill is for (a cluster = all its members) — the styles table reads
+  // it to work out what each of them sent back.
+  window._drillMembers = isCluster ? clusterMembers : new Set([custName]);
   openDrill(custName, drillData, rowEl);
 }
 
@@ -2647,6 +2656,8 @@ function openDrill(custName, drillData, rowEl) {
   window._scMap = {};
   entries.forEach(([sc, data]) => { window._scMap[sc] = data; });
 
+  renderDrillBrands();
+
   document.getElementById('drill-sc-cards').innerHTML = entries.map(([sc, data])=>{
     if (!sc) return '';
     const col = scColor(sc);
@@ -2654,6 +2665,7 @@ function openDrill(custName, drillData, rowEl) {
     const safeSc = sc.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
     return`<div class="drill-sc-card" style="border-color:${col}30;border-top-color:${col}" onclick="openStyleDrillByKey('${safeSc}')">
       <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:13px;color:${col}">${sc}</div>
+      <div style="margin:2px 0 0">${data.styles && data.styles[0] ? brandBadge(data.styles[0].n) : ''}</div>
       <div style="font-family:'IBM Plex Mono',monospace;font-size:17px;font-weight:700;margin:4px 0">${fN(data.qty)}</div>
       <div style="background:#f0ede8;border-radius:2px;height:5px;margin-bottom:4px"><div style="width:${pct}%;height:100%;background:${col};border-radius:2px;opacity:.7"></div></div>
       <div style="font-size:10px;color:var(--text3)">${fmt(data.rev)}</div>
@@ -2764,6 +2776,17 @@ function redrawStyleTable() {
   const sortBy = document.getElementById('drill-sort')?.value || 'qty';
   const gsMap = globalStyleMap();
 
+  // Goods Returns for THIS customer (or cluster) in THIS sub cut, per style,
+  // against what was dispatched to them — same rule as the Returns tab
+  // (returned ÷ dispatched, both under the active global filter). The "This
+  // Customer" units are already net of these; this column shows the amount.
+  const members = window._drillMembers || new Set();
+  const salesRows = FILTERED_RAW.length < D.raw.length ? FILTERED_RAW : D.raw;
+  const retRows = FILTERED_RETURNS.length < (D.returns_raw||[]).length ? FILTERED_RETURNS : (D.returns_raw||[]);
+  const gross = {}, retd = {};
+  for (const r of salesRows) if (r.sc === _curSC && r.sn && members.has(r.c)) gross[r.sn] = (gross[r.sn]||0) + r.q;
+  for (const r of retRows)   if (r.sc === _curSC && r.sn && members.has(r.c)) retd[r.sn]  = (retd[r.sn]||0)  + r.q;
+
   let styles = [...(_curSCData.styles||[])];
   if (sortBy==='freq') styles.sort((a,b)=>b.freq-a.freq);
   else if (sortBy==='rev') styles.sort((a,b)=>b.rev-a.rev);
@@ -2784,6 +2807,7 @@ function redrawStyleTable() {
         <strong style="font-family:'IBM Plex Mono',monospace;color:${col}">${s.qty} pcs</strong>
       </div></td>
       <td style="padding:7px 10px;text-align:center">${freqBadge(s.freq||1)}</td>
+      <td style="padding:7px 10px;text-align:right">${retCell(retd[s.n]||0, gross[s.n]||0)}</td>
       <td style="padding:7px 10px;text-align:right">${globalBadge}</td>
       <td style="padding:7px 10px;text-align:right">${stockCell(s.n)}</td>
       <td style="padding:7px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--text2)">${s.rev>0?fmt(s.rev):'—'}</td>
@@ -2798,6 +2822,7 @@ function redrawStyleTable() {
         <th style="padding:7px 10px;text-align:left;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Style No.</th>
         <th style="padding:7px 10px;text-align:left;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">This Customer</th>
         <th style="padding:7px 10px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Reorder Freq</th>
+        <th style="padding:7px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)" title="Units this customer sent back (Goods Returns) of this style, and that as a share of what was dispatched to them. The units in 'This Customer' are already net of these.">Returned (GR)</th>
         <th style="padding:7px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">All Customers Total</th>
         <th style="padding:7px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)" title="Units available to sell right now (R-Studio + KK stock tables)">In Stock</th>
         <th style="padding:7px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3)">Revenue</th>
@@ -2805,6 +2830,42 @@ function redrawStyleTable() {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
+}
+
+/** Brand breakdown for the customer (or cluster) being drilled: units and
+ *  revenue per brand, net of Goods Returns, under the active global filter.
+ *  Shown above the sub-cut cards so the owners see at a glance how much of
+ *  this account is gowns, fabric or suits. Names are never shown here, so
+ *  the lock needs nothing extra. */
+function renderDrillBrands() {
+  const el = document.getElementById('drill-brands');
+  if (!el) return;
+  const members = window._drillMembers || new Set();
+  const salesRows = FILTERED_RAW.length < D.raw.length ? FILTERED_RAW : D.raw;
+  const retRows = FILTERED_RETURNS.length < (D.returns_raw||[]).length ? FILTERED_RETURNS : (D.returns_raw||[]);
+  const acc = {};
+  const add = (r, sign) => {
+    if (!members.has(r.c)) return;
+    const b = rowBrand(r);
+    const a = acc[b] || (acc[b] = { q:0, rev:0 });
+    a.q += sign * r.q; a.rev += sign * r.q * r.p;
+  };
+  for (const r of salesRows) add(r, 1);
+  for (const r of retRows) add(r, -1);
+  const tot = Object.values(acc).reduce((s, a) => s + a.rev, 0);
+  const parts = BRAND_ORDER.filter(b => acc[b] && (acc[b].q || acc[b].rev)).map(b => {
+    const a = acc[b], share = tot > 0 ? Math.round(a.rev / tot * 100) : 0;
+    return `<span style="display:inline-flex;align-items:center;gap:6px;margin-right:14px"><span class="badge ${BRAND_BADGE_CLASS[b]}">${BRAND_LABEL[b]}</span><strong style="font-family:'IBM Plex Mono',monospace;font-size:12px">${fN(Math.round(a.q))}</strong><span style="font-size:11px;color:var(--text3)">units · ${fmt(Math.round(a.rev))} · ${share}%</span></span>`;
+  });
+  el.style.display = parts.length ? 'flex' : 'none';
+  el.innerHTML = parts.length ? `<span style="font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-right:6px">By brand</span>${parts.join('')}` : '';
+}
+
+/** Returned-units cell for the customer drill: "—" when nothing came back. */
+function retCell(ret, gross) {
+  if (!ret) return `<span style="color:var(--text3);font-family:'IBM Plex Mono',monospace;font-size:11px">—</span>`;
+  const rate = retRate(ret, gross);
+  return `<span style="font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;color:${retRateColor(rate)}" title="${fN(ret)} returned of ${fN(gross)} dispatched">↩ ${fN(ret)}${rate===null?'':' · '+rate.toFixed(1)+'%'}</span>`;
 }
 
 function closeDrill(){

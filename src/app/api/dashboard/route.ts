@@ -1,7 +1,9 @@
 /**
  * GET /api/dashboard
  *
- * Protected endpoint. Fetches rows from Google Sheet (with 5-min cache),
+ * Protected endpoint. Fetches sales + Goods Return rows from Supabase
+ * (oracle_bill_lines / oracle_gr_report, 5-min cache; the Google Sheet tabs
+ * are only the fallback when PROJECT_URL / ANON_KEY are not set),
  * runs the analytics processor, and returns the dashboard HTML with the
  * DATA constant injected at the /*__DATA__*\/ placeholder.
  *
@@ -30,6 +32,7 @@ import path from "node:path";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { fetchSheetRows, fetchReturnsRows } from "@/lib/sheets";
+import { fetchOracleSales, fetchOracleReturns, oracleConfigured } from "@/lib/oracle";
 import { process as runProcessor } from "@/lib/processor";
 import { fetchDesignMap, designsConfigured } from "@/lib/designs";
 import { getStableDesignToken } from "@/lib/signing";
@@ -52,10 +55,14 @@ export async function GET(req: NextRequest) {
 
   try {
     // ── Fetch + process ───────────────────────────────────────────────────
-    const [{ rows, fetchedAt, fromCache }, { rows: returnRows }] = await Promise.all([
-      fetchSheetRows(force),
-      fetchReturnsRows(force),
-    ]);
+    // Supabase is the system of record now. If it is configured but fails, that
+    // is an error to show — NOT a silent drop back to the (stale) sheet.
+    const useOracle = oracleConfigured();
+    const [{ rows, fetchedAt, fromCache }, { rows: returnRows }] = await Promise.all(
+      useOracle
+        ? [fetchOracleSales(force), fetchOracleReturns(force)]
+        : [fetchSheetRows(force), fetchReturnsRows(force)],
+    );
     const data = runProcessor(rows, returnRows);
 
     // Design thumbnails (optional feature — absent env vars ⇒ empty map).
