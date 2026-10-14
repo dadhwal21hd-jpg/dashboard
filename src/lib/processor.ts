@@ -352,13 +352,21 @@ function extractRow(colMap: ColumnMap, r: SheetRow): ParsedRow {
   // their own labelling. The style keeps its FULL design code: stripping the
   // "E-" prefix would make 3 fabric codes equal real gown style numbers
   // (9033, 9101, 9124), mixing up stock and photos.
+  //
+  // "[SOLO]" / "SOLO" is dropped from the end of the code: Oracle writes some bills of a design as
+  // "E-21311B [SOLO]" and others as "E-21311B", but it is the same design
+  // (user-confirmed Oct 2026; Oracle's own design filter returns both). Other
+  // tags — "[NK]", "[WN]" — are NOT confirmed and are kept as they come.
+  const code = design
+    .replace(/(?:\s*(?:[[\]]\s*(?:SOLO|NK|WN)\s*[[\]]?|(?:SOLO|NK|WN)\s*[[\]]|SOLO))+\s*$/i, "")
+    .trim();
   if (brand === "labotanica") {
-    sn = design || "Unknown";
+    sn = code || "Unknown";
     sc = fabricName(itemDesc);
   } else if (brand === "unstitched") {
     // Grouped by cloth, same as fabric; the "SAARR"/"RAAS" brand word is
     // dropped so SAAR and RAAS crape sit under one "CRAPE PURE" cut.
-    sn = design || "Unknown";
+    sn = code || "Unknown";
     sc = fabricName((itemDesc ?? "").replace(/^\s*(SAARR?|RAAS)\s+/i, ""));
   }
   return { cust, sc, sn, qty, price, date, brand };

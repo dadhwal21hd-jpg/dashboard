@@ -303,6 +303,12 @@ two words of the Item Description minus the SAARR/RAAS word ("CRAPE PURE",
 Do not strip the prefix: 3 fabric codes (9033, 9101, 9124) equal real gown style
 numbers and would mix up stock and photos.
 
+**Trailing `SOLO`, `[NK]` and `[WN]` tags are dropped from a suit/fabric design code**
+(`E-21311B [SOLO]`, `E-21721 SOLO`, `E-22073E [NK] SOLO` → `E-21311B`, `E-21721`,
+`E-22073E`) — the same design billed under a different lot/tag; user-confirmed Oct
+2026 (Oracle's own design filter returns `[SOLO]` with the plain code). Tolerates
+Oracle typos (`[NK[`, `NK]`). Gown codes are untouched (none carry these tags).
+
 **Units are not comparable across brands.** Only "PRINTED FABRIC" (68,777 of
 Labotanica's 76,890 units, ~₹75 each) is clearly metres; gowns and suits count
 pieces/sets. With the brand filter on "All" they are added together.
