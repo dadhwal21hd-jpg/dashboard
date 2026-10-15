@@ -1400,9 +1400,9 @@ function getStyleThreshold() {
 }
 
 function onStyleThresholdChange() {
-  // Re-render style numbers tab and update KPI counts
+  // Re-render style numbers tab; Overview's "Styles (>N sold)" KPI follows the
+  // same threshold and is redrawn whenever that tab is opened.
   if (typeof renderSG === 'function') renderSG();
-  if (typeof renderOverview === 'function') renderOverview();
 }
 
 // Build a lookup: customer name (case-insensitive trim) -> cluster name
@@ -1453,7 +1453,8 @@ function applyLockState() {
   // drill-downs — bakes the lock state into its HTML at render time, so a tab
   // rendered while locked keeps showing "CUSTOMER 01" after an unlock until it
   // happens to re-render for some other reason. This used to call renderCusts()
-  // alone, which is why only the Customers tab updated.
+  // alone, which is why only the Customers tab updated. (renderAll() draws the
+  // tab on screen and marks the rest stale, so each is redrawn when opened.)
   if (D) renderAll();
 }
 
@@ -2174,8 +2175,9 @@ function onCompareChange() {
   renderCmpBar();
   renderFilterSummary();
   if (typeof closeDrill === 'function') closeDrill();
-  renderOverview();
-  renderSG();
+  // The two tabs compare changes; whichever is on screen is drawn now.
+  _staleTabs.add('overview'); _staleTabs.add('stylenumbers');
+  renderTab(activeTabName());
 }
 
 // ── Compare: Overview ──
@@ -2350,8 +2352,11 @@ function renderSGCompare(sort, threshold) {
   document.getElementById('sn-count-sub').textContent =
     `Comparing ${P.map(p => p.label).join(' vs ')}${CMP.mode === 'months' ? ` (${monthsLabel(C.months)})` : ''} · ${count} styles with qty > ${threshold} in at least one year. Click any group to expand.`;
 
+  _SG_BODIES = []; _SG_STYLES = [];
   document.getElementById('sg-container').innerHTML = gl.map((g, gi) => {
     const col = scColor(g.sc);
+    _SG_STYLES[gi] = g.styles.map(s => String(s.n).toLowerCase());
+    _SG_BODIES[gi] = () => {
     const rows = [...g.styles].sort((a, b) => (b.v[last][metric] - a.v[last][metric]) || (sum(b.v.map(x => x[metric])) - sum(a.v.map(x => x[metric]))));
     const rowMax = Math.max(1, ...rows.flatMap(s => s.v.map(x => x[metric])));
     const body = rows.map((s, i) => `<tr class="sn-row" data-style="${esc(s.n)}">
@@ -2363,6 +2368,8 @@ function renderSGCompare(sort, threshold) {
       }).join('')}
       ${L > 1 ? `<td style="text-align:right;padding:7px 12px">${cmpDelta(s.v[last][metric], s.v[last-1][metric])}</td>` : ''}
     </tr>`).join('');
+    return `<table class="sg-inner-table"><thead><tr><th>#</th><th>Style No.</th>${P.map(p => `<th style="text-align:right;color:${p.color}">${cmpYearTag(p)}${unitM ? ' ·' + unitM : ' · revenue'}</th>`).join('')}${L > 1 ? `<th style="text-align:right">vs ${esc(P[last-1].label)}</th>` : ''}</tr></thead><tbody>${body}</tbody></table>`;
+    };
     return `<div class="sg" data-sc="${esc(g.sc)}" id="sg-${gi}">
       <div style="height:3px;background:${col}"></div>
       <div class="sg-hdr" onclick="tg(${gi})" id="sh-${gi}" style="--sg-color:${col}">
@@ -2373,10 +2380,32 @@ function renderSGCompare(sort, threshold) {
           <span class="chevron">▼</span>
         </div>
       </div>
-      <div class="sg-body" id="sb-${gi}">
-        <table class="sg-inner-table"><thead><tr><th>#</th><th>Style No.</th>${P.map(p => `<th style="text-align:right;color:${p.color}">${cmpYearTag(p)}${unitM ? ' ·' + unitM : ' · revenue'}</th>`).join('')}${L > 1 ? `<th style="text-align:right">vs ${esc(P[last-1].label)}</th>` : ''}</tr></thead><tbody>${body}</tbody></table>
-      </div></div>`;
+      <div class="sg-body" id="sb-${gi}"></div></div>`;
   }).join('') || '<div class="bl-empty">No styles in the compared periods.</div>';
+}
+
+// ── Style groups are built on demand ─────────────────────────────
+// The tab used to build every row of every group up front — ~4,700 styles,
+// over 100,000 elements, nearly all inside collapsed groups — which made
+// every filter tap take seconds on a phone. Now each render only draws the
+// group headers and keeps, per group, a function that draws its table
+// (_SG_BODIES) plus its style numbers for the search box (_SG_STYLES). A
+// group's table is drawn the first time it's opened.
+let _SG_BODIES = [], _SG_STYLES = [];
+
+/** Draw group gi's style table if it hasn't been drawn since the last render. */
+function sgFill(gi) {
+  const body = document.getElementById('sb-' + gi);
+  if (body && !body.dataset.built) {
+    body.innerHTML = _SG_BODIES[gi] ? _SG_BODIES[gi]() : '';
+    body.dataset.built = '1';
+  }
+}
+
+function sgSetOpen(gi, open) {
+  if (open && document.getElementById('sg-' + gi)?.style.display !== 'none') sgFill(gi);
+  document.getElementById('sh-' + gi)?.classList.toggle('open', open);
+  document.getElementById('sb-' + gi)?.classList.toggle('open', open);
 }
 
 function renderSG() {
@@ -2413,10 +2442,13 @@ function renderSG() {
   document.getElementById('sn-count-sub').textContent = `${totalQualifying} styles with qty > ${threshold}. Click any group to expand.`;
   const nMo = (fa.monthly.length||D.monthly.length||28);
 
+  _SG_BODIES = []; _SG_STYLES = [];
   document.getElementById('sg-container').innerHTML=groups.map((g,gi)=>{
     const col=scColor(g.sc);
     const sorted=[...g.s].sort((a,b)=>sort==='qty'?b.qty-a.qty:sort==='revenue'?b.rev-a.rev:b.cust-a.cust);
     const mq=sorted[0]?.qty||1, tr=sorted.reduce((s,r)=>s+r.rev,0);
+    _SG_STYLES[gi] = sorted.map(s => String(s.n).toLowerCase());
+    _SG_BODIES[gi] = () => {
     const rows=sorted.map((s,i)=>{
       const pct=((s.qty/mq)*100).toFixed(0);
       const star=s.qty>=40?'<span class="badge bg" style="font-size:9px;padding:1px 5px">⭐</span>':s.qty>=25?'<span class="badge br" style="font-size:9px;padding:1px 5px">🔥</span>':'';
@@ -2431,6 +2463,8 @@ function renderSG() {
         <td style="text-align:right;font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--text3);padding:7px 12px">${(s.qty/nMo).toFixed(1)}/mo</td>
       </tr>`;
     }).join('');
+    return `<table class="sg-inner-table"><thead><tr><th>#</th><th>Style No.</th><th>Units Sold</th><th style="text-align:right" title="Units available to sell right now (R-Studio + KK stock tables)">In Stock</th><th style="text-align:right">Revenue</th><th style="text-align:right">MRP</th><th style="text-align:center">Customers</th><th style="text-align:right">Run Rate</th></tr></thead><tbody>${rows}</tbody></table>`;
+    };
     return`<div class="sg" data-sc="${g.sc}" id="sg-${gi}">
       <div style="height:3px;background:${col}"></div>
       <div class="sg-hdr" onclick="tg(${gi})" id="sh-${gi}" style="--sg-color:${col}">
@@ -2442,9 +2476,7 @@ function renderSG() {
           <span class="chevron">▼</span>
         </div>
       </div>
-      <div class="sg-body" id="sb-${gi}">
-        <table class="sg-inner-table"><thead><tr><th>#</th><th>Style No.</th><th>Units Sold</th><th style="text-align:right" title="Units available to sell right now (R-Studio + KK stock tables)">In Stock</th><th style="text-align:right">Revenue</th><th style="text-align:right">MRP</th><th style="text-align:center">Customers</th><th style="text-align:right">Run Rate</th></tr></thead><tbody>${rows}</tbody></table>
-      </div></div>`;
+      <div class="sg-body" id="sb-${gi}"></div></div>`;
   }).join('');
   }
 
@@ -2452,6 +2484,7 @@ function renderSG() {
   // the search box. Both of those live as inline display styles painted onto the
   // DOM by filterSG(), so a rebuild wipes them — changing the sort used to
   // silently drop an active sub cut filter and show every group again.
+  // (filterSG() then draws the tables of the reopened groups it leaves visible.)
   if (wasOpen.size) {
     document.querySelectorAll('.sg').forEach(el => {
       if (!wasOpen.has(el.dataset.sc)) return;
@@ -2657,8 +2690,10 @@ function closeAllStyleCust() {
   });
 }
 
-function tg(i){document.getElementById('sh-'+i)?.classList.toggle('open');document.getElementById('sb-'+i)?.classList.toggle('open');}
-function expandAll(){document.querySelectorAll('.sg-hdr,.sg-body').forEach(el=>el.classList.add('open'));}
+function tg(i){ sgSetOpen(i, !document.getElementById('sb-'+i)?.classList.contains('open')); }
+// Groups hidden by the Sub Cut dropdown are only marked open; filterSG() draws
+// their tables if they're shown later.
+function expandAll(){ document.querySelectorAll('.sg').forEach((el,i)=>sgSetOpen(i, true)); }
 function collapseAll(){closeAllStyleCust();document.querySelectorAll('.sg-hdr,.sg-body').forEach(el=>el.classList.remove('open'));}
 function filterSG(){
   closeAllStyleCust();   // detail rows would otherwise be re-shown by the row loops below
@@ -2672,27 +2707,20 @@ function filterSG(){
     if(!s){
       // No search text — show all rows in this group, restore default display
       el.style.display='';
+      if (el.querySelector('.sg-body.open')) sgFill(i);
       el.querySelectorAll('tbody tr').forEach(tr=>{ tr.style.display=''; });
       return;
     }
 
-    // Search active — show only matching rows
-    let matchCount=0;
+    // Search active — matched against the group's style list rather than its
+    // rows, so a group whose table isn't drawn yet is still searched.
+    if (!(_SG_STYLES[i]||[]).some(sn => sn.includes(s))) { el.style.display='none'; return; }
+    el.style.display='';
+    // Auto-expand groups with matches so the user sees results immediately
+    sgSetOpen(i, true);
     el.querySelectorAll('tbody tr').forEach(tr=>{
-      const styleNo=(tr.dataset.style||'').toLowerCase();
-      const matches=styleNo.includes(s);
-      tr.style.display=matches?'':'none';
-      if(matches) matchCount++;
+      tr.style.display=(tr.dataset.style||'').toLowerCase().includes(s)?'':'none';
     });
-
-    if(matchCount>0){
-      el.style.display='';
-      // Auto-expand groups with matches so the user sees results immediately
-      document.getElementById('sh-'+i)?.classList.add('open');
-      document.getElementById('sb-'+i)?.classList.add('open');
-    } else {
-      el.style.display='none';
-    }
   });
 }
 
@@ -3381,6 +3409,7 @@ function renderReturns() {
     document.getElementById('returns-cust-tbody').innerHTML =
       `<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--text3)">${configured ? 'No returns match the current filter.' : 'No Goods Return data — GOOGLE_RETURNS_RANGE may not be configured.'}</td></tr>`;
     document.getElementById('returns-style-tbody').innerHTML = '';
+    _retStyleSeq++;   // stop any batches still appending to the old table
     return;
   }
 
@@ -3439,7 +3468,7 @@ function renderReturns() {
 
   // ── By style ──
   const styleRows = [...A.styleRows].sort(retSorter(sortBy, minVol));
-  document.getElementById('returns-style-tbody').innerHTML = styleRows.map((s,i) => {
+  const styleRowHtml = (s,i) => {
     const thin = s.gross < minVol;
     return `<tr class="ret-row" onclick="toggleReturnsStyleDrill('${retKey(s.n)}',this)">
       <td>${rn(i)}</td>
@@ -3451,8 +3480,23 @@ function renderReturns() {
       ${retRateCell(s.rate, thin)}
       <td style="text-align:center;font-family:'IBM Plex Mono',monospace">${s.custs}</td>
     </tr>`;
-  }).join('');
+  };
+  // Every returned style is listed (~900, each with a photo cell) — drawn all
+  // at once that froze a phone for over a second when the tab opened. Draw
+  // the first screenful now and append the rest in batches straight after.
+  const tb = document.getElementById('returns-style-tbody');
+  const seq = ++_retStyleSeq;
+  tb.innerHTML = styleRows.slice(0, 60).map(styleRowHtml).join('');
+  (function more(from) {
+    if (from >= styleRows.length) return;
+    setTimeout(() => {
+      if (seq !== _retStyleSeq) return;   // a newer render replaced this table
+      tb.insertAdjacentHTML('beforeend', styleRows.slice(from, from + 200).map((s, k) => styleRowHtml(s, from + k)).join(''));
+      more(from + 200);
+    }, 0);
+  })(60);
 }
+let _retStyleSeq = 0;
 
 /** Collapse whichever drill row is open under this row's table, and report
  *  whether the click was on the row that was already open (i.e. a close). */
@@ -3605,15 +3649,32 @@ function renderClusters() {
 // ══════════════════════════════════════════════════════════════
 // RENDER ALL  — called whenever any filter changes
 // ══════════════════════════════════════════════════════════════
+// Only the tab on screen is drawn; the others are marked stale and drawn when
+// opened (switchTab). Redrawing all eight on every filter tap, unlock or
+// compare toggle took about 2 seconds on a mid-range phone.
+// (Arrow functions so each name is looked up when called, not captured now.)
+const TAB_RENDERERS = {
+  overview: () => renderOverview(), subcuts: () => renderSubcuts(),
+  stylenumbers: () => renderSG(), customers: () => renderCusts(),
+  reorder: () => renderReorderRadar(), returns: () => renderReturns(),
+  clusters: () => renderClusters(), insights: () => renderInsights(),
+};
+let _staleTabs = new Set();
+
+function activeTabName() {
+  return document.querySelector('.section.active')?.id.replace(/^tab-/, '') || 'overview';
+}
+
+/** Draw a tab if it's stale (or always, with force). */
+function renderTab(name, force) {
+  if (!force && !_staleTabs.has(name)) return;
+  _staleTabs.delete(name);
+  TAB_RENDERERS[name]?.();
+}
+
 function renderAll() {
-  renderOverview();
-  renderSubcuts();
-  renderSG();
-  renderCusts();
-  renderReorderRadar();
-  renderReturns();
-  renderClusters();
-  renderInsights();
+  _staleTabs = new Set(Object.keys(TAB_RENDERERS));
+  renderTab(activeTabName());
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -3873,10 +3934,10 @@ function switchTab(name, el) {
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
   el.classList.add('active');
-  // Redraw rather than just replay the grow-in: a filter changed while another
-  // tab was open draws the chart hidden, at no width, so its month labels need
-  // laying out again now there's room to measure. Also replays the animation.
-  if (name === 'overview') renderOverview();
+  // Draw the tab if a filter/lock/compare change happened while it was hidden.
+  // Overview is always redrawn: that replays the bars' grow-in, and lays the
+  // chart's month labels out against a width it can now measure.
+  renderTab(name, name === 'overview');
 
   // Phone/tablet layout: the tab strip scrolls sideways and sticks to the top.
   const nav = el.parentElement;
@@ -3928,8 +3989,7 @@ function initDashboard() {
   document.getElementById('app').style.display = 'block';
 
   renderFilterSummary();
-  renderAll();
-  applyLockState();   // apply locked CSS class and button state
+  applyLockState();   // apply locked CSS class and button state — and draws, via renderAll()
   showLoading(false);
 }
 

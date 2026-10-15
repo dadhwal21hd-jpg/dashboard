@@ -71,8 +71,18 @@ Key pieces:
   walks `FILTERED_RAW.length < D.raw.length ? FILTERED_RAW : D.raw` directly.
   `applyGlobalFilter()` sets `FILTERED_RAW` and clears `_FA`.
 - Render functions per tab: `renderOverview`, `renderSubcuts`, `renderSG`
-  (style numbers), `renderCusts`, `renderClusters`, `renderInsights`.
-  `renderAll()` calls them.
+  (style numbers), `renderCusts`, `renderReorderRadar`, `renderReturns`,
+  `renderClusters`, `renderInsights` (map: `TAB_RENDERERS`).
+  **`renderAll()` draws only the tab on screen** and marks the rest stale
+  (`_staleTabs`); `switchTab()` draws a stale tab when it's opened. So code
+  must not read another tab's DOM expecting it to be current — read the data
+  (`getFA()`, `D`) instead. Drawing all eight on every filter tap cost ~2s on
+  a mid-range phone (measured, CPU-throttled Chrome).
+- **Style Numbers builds a group's rows only when it's opened** (`sgFill()` /
+  `sgSetOpen()`; `_SG_BODIES` holds the per-group table builders,
+  `_SG_STYLES` the style numbers the search box matches against). Building
+  all ~4,700 rows up front was 108k of the page's 129k elements. The Returns
+  style table draws its first 60 rows, then appends the rest in batches.
 - Helpers: `fmt()` ₹ short form, `fN()` en-IN number, `esc()` HTML escape,
   `scColor()` stable per-sub-cut colour, `freqBadge()` reorder-count pill,
   `rn()` rank medal.
