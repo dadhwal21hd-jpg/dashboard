@@ -25,19 +25,34 @@ export const dynamic = "force-dynamic";
 const ID_RE = /^[A-Za-z0-9_-]{10,}$/;
 const SZ_RE = /^[whs]\d{2,4}$/;
 
-async function authorised(req: NextRequest): Promise<boolean> {
-  if (verifyDesignToken(req.nextUrl.searchParams.get("t"))) return true;
+/** How the request was let in: "token" (credential is in the URL itself),
+ *  "session" (cookie), or null. */
+async function authorised(req: NextRequest): Promise<"token" | "session" | null> {
+  if (verifyDesignToken(req.nextUrl.searchParams.get("t"))) return "token";
   const session = await getServerSession(authOptions);
-  return !!session?.user?.email;
+  return session?.user?.email ? "session" : null;
 }
 
-function imageResponse(buf: Buffer, type: string) {
+/**
+ * Edge caching, for token-authorised requests only. Vercel's CDN keeps the
+ * response keyed by the full URL — token included — so a cached copy is only
+ * reachable with that exact signed URL, i.e. by whoever could already fetch
+ * it from this function. A repeat view (same user on another device, or after
+ * the browser cache was cleared) is then answered at the edge: no function
+ * start, no Data Cache read. Session-cookie requests are never edge-cached —
+ * their URL carries no credential, so a cached copy would serve anyone.
+ * Vercel strips this header; the browser still sees the Cache-Control below.
+ */
+function cdnHeaders(via: "token" | "session", maxAge: number): Record<string, string> {
+  return via === "token" ? { "Vercel-CDN-Cache-Control": `max-age=${maxAge}` } : {};
+}
+
+function imageResponse(buf: Buffer, type: string, via: "token" | "session") {
   return new NextResponse(new Uint8Array(buf), {
     status: 200,
     headers: {
       "Content-Type": type,
-      // Private: it's a signed URL, so only the browser that has it may cache
-      // — no shared/CDN caching, since the token in the URL is per-user.
+      // Browser: only the browser that has the signed URL may cache it.
       // max-age matches getStableDesignToken()'s ~25-day reuse window (see
       // src/lib/signing.ts): once that token rotates, this exact URL is
       // never requested again anyway, so caching longer buys nothing.
@@ -47,12 +62,14 @@ function imageResponse(buf: Buffer, type: string) {
       // "keep the photo basically forever" for a real, everyday browser —
       // it just isn't literally infinite, because the token isn't either.
       "Cache-Control": "private, max-age=2160000, immutable",
+      ...cdnHeaders(via, 2160000),
     },
   });
 }
 
 export async function GET(req: NextRequest) {
-  if (!(await authorised(req))) {
+  const via = await authorised(req);
+  if (!via) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -94,7 +111,7 @@ export async function GET(req: NextRequest) {
     }
     const img = await fetchImageBytes(fileId, size);
     if (!img) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    return imageResponse(img.buf, img.type);
+    return imageResponse(img.buf, img.type, via);
   }
 
   // ── Style lookup ─────────────────────────────────────────────────────────
@@ -121,7 +138,7 @@ export async function GET(req: NextRequest) {
         count: files.length,
         files: files.map((f) => ({ id: f.id, name: f.name })),
       },
-      { headers: { "Cache-Control": "private, max-age=600" } },
+      { headers: { "Cache-Control": "private, max-age=600", ...cdnHeaders(via, 600) } },
     );
   }
 
@@ -131,5 +148,5 @@ export async function GET(req: NextRequest) {
 
   const img = await fetchImageBytes(files[0].id, size);
   if (!img) return NextResponse.json({ error: "Image unavailable" }, { status: 404 });
-  return imageResponse(img.buf, img.type);
+  return imageResponse(img.buf, img.type, via);
 }

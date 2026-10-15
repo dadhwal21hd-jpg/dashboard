@@ -175,6 +175,14 @@ select:focus,input:focus{outline:none;border-color:var(--accent);}
 .dz-x:hover{color:var(--text);}
 .dz-stage{position:relative;display:flex;align-items:center;justify-content:center;background:#faf9f7;min-height:260px;padding:10px;}
 .dz-stage img{max-width:100%;max-height:64vh;object-fit:contain;border-radius:4px;}
+/* Preview + full photo stacked in one cell. The preview is sized by height,
+   which for these portrait photos is exactly the box the full photo lands
+   in; it stays (invisible) after the photo loads so nothing shifts. */
+.dz-pic{display:grid;place-items:center;}
+.dz-pic > img{grid-area:1/1;}
+.dz-pic > .dz-ph{height:64vh;width:auto;max-width:100%;filter:blur(3px);transition:opacity .3s;}
+.dz-pic > .dz-full{opacity:0;transition:opacity .3s;}
+.dz-pic > .dz-full.loaded{opacity:1;}
 .dz-nav{position:absolute;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.92);border:1px solid var(--border);border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:15px;color:var(--text2);}
 .dz-nav:hover{border-color:var(--accent);color:var(--accent);}
 .dz-prev{left:10px;} .dz-next{right:10px;}
@@ -916,6 +924,7 @@ body.cmp-on .cmp-na{display:block;}
 
   .dz-box{max-width:calc(100vw - 16px);}
   .dz-stage img{max-height:70vh;}
+  .dz-pic > .dz-ph{height:70vh;}
   .dz-nav{width:40px;height:40px;font-size:18px;}
   .dz-x{font-size:26px;padding:2px 8px;}
 }
@@ -4054,7 +4063,7 @@ function designThumb(sn, size){
     : `No photo for this exact colourway (#${esc(sn)}) — showing base style #${esc(resolved.style)} instead. Click to enlarge.`;
   return `<span class="dt ${cls}" style="${approxStyle}" onclick="event.stopPropagation();openDesign('${esc(String(sn)).replace(/'/g,"\\'")}')" title="${title}">
     <span class="dt-ph">◌</span>
-    <img loading="lazy" src="${src}" alt="Design ${esc(sn)}"
+    <img loading="lazy" decoding="async" src="${src}" alt="Design ${esc(sn)}"
          onload="this.classList.add('loaded')"
          onerror="this.closest('.dt').classList.add('dt-empty');this.remove()">
     ${resolved.exact ? '' : '<span class="dt-approx" title="Approximate — base style, not this exact colourway">~</span>'}
@@ -4094,9 +4103,13 @@ function openDesign(sn){
  *  again instead of actually re-hitting the server. */
 function dzLoadMain(){
   const bust = _dzRetries > 0 ? { r: String(Date.now()) } : {};
+  // The row's thumbnail (same URL as designThumb's 'sm' size) is already in
+  // the browser cache, so it's shown enlarged at once and the full-size photo
+  // (~230 KB) fades in over it — rather than an empty box until it arrives.
   document.getElementById('dz-stage').innerHTML =
-    `<img src="${designURL({style: _dzStyle, sz: 'w1200', ...bust})}" alt="Design ${esc(_dzStyle)}"
-          onerror="dzFail()">`;
+    `<div class="dz-pic"><img class="dz-ph" src="${designURL({style: _dzStyle, sz: 'w160'})}" alt="" onerror="this.remove()">
+     <img class="dz-full" src="${designURL({style: _dzStyle, sz: 'w1200', ...bust})}" alt="Design ${esc(_dzStyle)}"
+          fetchpriority="high" onload="this.classList.add('loaded');this.previousElementSibling.style.opacity=0" onerror="dzFail()"></div>`;
 }
 
 /** Most failures seen in practice are a one-off blip (a burst of concurrent

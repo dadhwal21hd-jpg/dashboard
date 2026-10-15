@@ -9,8 +9,17 @@
  *   GOOGLE_SERVICE_ACCOUNT_EMAIL
  *   GOOGLE_SERVICE_ACCOUNT_KEY     newlines may be literal \n (Vercel) or real
  */
-import { google } from "googleapis";
-import type { JWT } from "google-auth-library";
+// The JWT class straight from google-auth-library (same version googleapis
+// itself uses), NOT via `googleapis`: that package is ~12 MB once bundled and
+// every route importing this file paid to load it on a cold start — including
+// /api/design, where a thumbnail almost never needs it. Callers that do need
+// a Sheets/Drive client import googleapis lazily (see loadGoogleApis below).
+import { JWT } from "google-auth-library";
+
+/** googleapis, loaded on first use only. */
+export async function loadGoogleApis() {
+  return (await import("googleapis")).google;
+}
 
 export const SCOPE_SHEETS = "https://www.googleapis.com/auth/spreadsheets.readonly";
 export const SCOPE_DRIVE  = "https://www.googleapis.com/auth/drive.readonly";
@@ -34,7 +43,7 @@ function build(emailVar: string, keyVar: string, scopes: string[]): JWT {
   // Vercel env vars can't contain real newlines; accept either form.
   const privateKey = getEnv(keyVar).replace(/\\n/g, "\n");
 
-  const jwt = new google.auth.JWT({ email, key: privateKey, scopes });
+  const jwt = new JWT({ email, key: privateKey, scopes });
   jwtCache.set(cacheKey, jwt);
   return jwt;
 }

@@ -190,6 +190,26 @@ Measured effect of both together: a burst of 60 concurrent thumbnail
 requests went from ~8s wall time with 3 failures (Drive quota/backoff under
 load) to ~2.7s with 0 failures on the same infrastructure.
 
+**Oct 2026, three more (phone image speed):**
+
+1. **`googleapis` is loaded on demand only** (`loadGoogleApis()` in
+   [src/lib/google.ts](src/lib/google.ts); the JWT comes straight from
+   `google-auth-library`). Bundled, it is an 11.5 MB chunk out of the 14 MB
+   every route loaded on a cold start — /api/design paid ~345ms to load code a
+   thumbnail almost never runs (public endpoint + Data Cache need none of it).
+   Now ~97ms. Only the folder listing, the private-file fallback and the
+   catalogue/orders sheet reads import it. **Don't add a top-level
+   `import { google } from "googleapis"` back.**
+2. **Vercel edge caching for token-signed image URLs**
+   (`Vercel-CDN-Cache-Control` via `cdnHeaders()` in the design route). The
+   edge key includes the token, so a copy is only reachable with that exact
+   signed URL; a repeat view (same user on another device, or after the
+   browser cache is cleared) skips the function entirely. Session-cookie
+   requests are never edge-cached — their URL carries no credential.
+3. **Lightbox shows the cached thumbnail at once** (`.dz-ph`, sized by height
+   so it fills exactly the box the full photo lands in) and fades the ~230 KB
+   w1200 photo in over it. Thumbnails also decode async.
+
 **Cached "basically forever" (Sep 2026 follow-up)**, per the user asking to
 keep photos cached always:
 

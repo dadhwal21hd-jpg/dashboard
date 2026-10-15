@@ -10,9 +10,8 @@
  * Requires the Drive API enabled on the Cloud project and the design folders
  * shared with the service account (sharing one parent cascades to children).
  */
-import { google } from "googleapis";
 import { unstable_cache, revalidateTag } from "next/cache";
-import { buildDesignsAuth, SCOPE_DRIVE } from "./google";
+import { buildDesignsAuth, loadGoogleApis, SCOPE_DRIVE } from "./google";
 
 export interface DriveImage {
   id: string;
@@ -36,7 +35,10 @@ const BYTES_TAG = "drive-bytes";
  */
 const CACHE_FOREVER = false;
 
-function driveClient() {
+/** Only the folder listing and the private-file fallback need the Drive API;
+ *  the common path (public thumbnail endpoint) never loads googleapis. */
+async function driveClient() {
+  const google = await loadGoogleApis();
   return google.drive({ version: "v3", auth: buildDesignsAuth([SCOPE_DRIVE]) });
 }
 
@@ -49,7 +51,7 @@ function driveClient() {
  * normally (that's real data, fine to cache).
  */
 async function computeFolderImages(folderId: string): Promise<DriveImage[]> {
-  const drive = driveClient();
+  const drive = await driveClient();
   const res = await drive.files.list({
     q: `'${folderId.replace(/'/g, "\\'")}' in parents and mimeType contains 'image/' and trashed = false`,
     fields: "files(id,name,mimeType)",
@@ -140,7 +142,7 @@ async function computeImageBytes(fileId: string, size: string): Promise<CachedIm
   const pub = await fetchPublicThumbnail(fileId, size);
   if (pub) return { b64: pub.buf.toString("base64"), type: pub.type };
 
-  const drive = driveClient();
+  const drive = await driveClient();
   const meta = await drive.files.get({
     fileId,
     fields: "thumbnailLink,mimeType",

@@ -15,9 +15,8 @@
  *                                   spreadsheet as GOOGLE_SHEET_ID. Unset = no returns
  *                                   data (dashboard renders exactly as before).
  */
-import { google } from "googleapis";
 import type { SheetRow } from "./types";
-import { buildAuth, getEnv, SCOPE_SHEETS } from "./google";
+import { buildAuth, getEnv, loadGoogleApis, SCOPE_SHEETS } from "./google";
 
 interface CacheEntry {
   data: SheetRow[];
@@ -49,6 +48,7 @@ async function fetchRange(
   }
 
   const auth = buildAuth([SCOPE_SHEETS]);
+  const google = await loadGoogleApis();
   const sheets = google.sheets({ version: "v4", auth });
 
   const res = await sheets.spreadsheets.values.get({

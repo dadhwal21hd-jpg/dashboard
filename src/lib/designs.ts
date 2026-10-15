@@ -20,9 +20,8 @@
  * "Photo" column, so a column is only accepted once its values actually look
  * like Drive links.
  */
-import { google } from "googleapis";
 import { unstable_cache, revalidateTag } from "next/cache";
-import { buildDesignsAuth, SCOPE_SHEETS } from "./google";
+import { buildDesignsAuth, loadGoogleApis, SCOPE_SHEETS } from "./google";
 
 export type DesignRef = { t: "file" | "folder"; id: string };
 /** style number (trimmed) → the Drive image for it */
@@ -115,6 +114,7 @@ export function designsConfigured(): boolean {
  * why that distinction matters now.
  */
 async function readOneCatalogue(sheetId: string, range: string, label: string): Promise<DesignMap> {
+  const google = await loadGoogleApis();
   const sheets = google.sheets({ version: "v4", auth: buildDesignsAuth([SCOPE_SHEETS]) });
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: extractSheetId(sheetId),
