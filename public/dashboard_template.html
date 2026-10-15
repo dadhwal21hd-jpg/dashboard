@@ -2283,7 +2283,10 @@ function renderOverview() {
     <div class="kpi-card" style="--ac:#2a8a72"><div class="kpi-label">Styles (&gt;${threshold} sold)</div><div class="kpi-value">${totalStyles}</div><div class="kpi-sub">Across ${subcutCountWithStyles} sub cut categories</div></div>
     <div class="kpi-card" style="--ac:#c0392b"><div class="kpi-label">Top Style #</div><div class="kpi-value">${topStyle?'#'+topStyle.n:'—'}</div><div class="kpi-sub">${topStyle?topStyle.qty+' units · '+fmt(topStyle.rev):'—'}</div></div>`;
   drawBarLine('trend-chart', fa.monthly.length ? fa.monthly : D.monthly);
-  const t5=fa.subcuts.slice(0,5), mr=t5[0]?.revenue||1;
+  // Ranked by revenue, as the card says. fa.subcuts is in units order, and
+  // taking its first five showed Printed Fabric (most units, ₹50L) on top
+  // with every bar after it scaled past 100% of its own and drawn full.
+  const t5=[...fa.subcuts].sort((a,b)=>b.revenue-a.revenue).slice(0,5), mr=t5[0]?.revenue||1;
   document.getElementById('ov-sc').innerHTML=t5.map((s,i)=>bar(s.name,(s.revenue/mr)*100,PALETTE[i],fmt(s.revenue))).join('');
   const t5c=fa.customers.slice(0,5), mq=t5c[0]?.qty||1;
   document.getElementById('ov-cust').innerHTML=t5c.map((c,i)=>bar(c.name.slice(0,26),(c.qty/mq)*100,PALETTE[i],fN(c.qty)+' pcs')).join('');
