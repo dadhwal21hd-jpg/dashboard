@@ -36,6 +36,10 @@ Google Sheet
 ```
 
 - `?refresh=1` on the API busts the sheet cache.
+- `/api/dashboard` **compresses its own response** (`encodeFor()`: brotli q5,
+  else gzip). Next compresses pages but not route-handler responses —
+  measured 3.67 MB on the wire before, 267 KB after, ~18 ms of CPU. On a phone
+  on weak 4G that was 23.6 s → 4.6 s for the whole page.
 - Auth: NextAuth + Google OAuth, allowlist from `ALLOWED_EMAILS`
   ([src/lib/auth.ts](src/lib/auth.ts)); `src/middleware.ts` guards routes.
 

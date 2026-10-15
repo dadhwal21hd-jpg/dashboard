@@ -29,6 +29,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
+import { brotliCompress, gzip, constants as zlibConstants } from "node:zlib";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { fetchSheetRows, fetchReturnsRows } from "@/lib/sheets";
@@ -40,6 +42,32 @@ import { clearDriveCache } from "@/lib/drive";
 import { fetchStockMap } from "@/lib/stock";
 
 export const dynamic = "force-dynamic"; // never statically cache this route
+
+const brotli = promisify(brotliCompress);
+const gz = promisify(gzip);
+
+/**
+ * The page is ~3.6 MB (DATA carries every order row) but compresses to
+ * ~265 KB. Next compresses its pages, not route-handler responses — measured
+ * on `next start`: 3.67 MB on the wire, no Content-Encoding — so it's done
+ * here rather than left to whatever the host does. ~18 ms of CPU, off the
+ * event loop; on a phone on mobile data it saves seconds per load.
+ */
+async function encodeFor(req: NextRequest, body: string): Promise<{ data: Uint8Array<ArrayBuffer> | string; encoding?: string }> {
+  const accept = req.headers.get("accept-encoding") ?? "";
+  const buf = Buffer.from(body);
+  if (/\bbr\b/.test(accept)) {
+    const data = await brotli(buf, {
+      params: {
+        [zlibConstants.BROTLI_PARAM_QUALITY]: 5,
+        [zlibConstants.BROTLI_PARAM_SIZE_HINT]: buf.length,
+      },
+    });
+    return { data: new Uint8Array(data), encoding: "br" };
+  }
+  if (/\bgzip\b/.test(accept)) return { data: new Uint8Array(await gz(buf, { level: 6 })), encoding: "gzip" };
+  return { data: body };
+}
 
 export async function GET(req: NextRequest) {
   // ── Auth gate ────────────────────────────────────────────────────────────
@@ -122,11 +150,14 @@ export async function GET(req: NextRequest) {
       `const DATA = ${JSON.stringify(meta)};`,
     );
 
-    return new NextResponse(injected, {
+    const { data: payload, encoding } = await encodeFor(req, injected);
+    return new NextResponse(payload, {
       status: 200,
       headers: {
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "no-store",
+        Vary: "Accept-Encoding",
+        ...(encoding ? { "Content-Encoding": encoding } : {}),
       },
     });
   } catch (err) {

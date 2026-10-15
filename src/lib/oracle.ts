@@ -30,7 +30,10 @@ export function oracleConfigured(): boolean {
 }
 
 const PAGE = 1000;          // PostgREST's max-rows cap on this project
-const CONCURRENCY = 6;      // pages fetched at once after the first
+// Pages fetched at once after the first. 20 covers the whole sales table
+// (~18 pages) in one round; at 6 it took three rounds. Same requests either
+// way — measured median 1.65 s -> 1.1 s for a cold read.
+const CONCURRENCY = 20;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
 // Below this many return rows (or under half of the last good read) the table
