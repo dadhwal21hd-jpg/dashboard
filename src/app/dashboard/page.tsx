@@ -68,40 +68,48 @@ export default function DashboardPage() {
     setLastRefresh(Date.now());
   };
 
+  // h-dvh, not h-screen: on a phone 100vh is the height with the browser's
+  // toolbars hidden, so the bottom of the dashboard sat behind them.
   if (authStatus === "loading") {
     return (
-      <div className="flex h-screen items-center justify-center bg-stone-100">
+      <div className="flex h-dvh items-center justify-center bg-stone-100">
         <Spinner />
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen flex-col bg-stone-100">
+    <div className="flex h-dvh flex-col bg-stone-100">
       {/* Top bar */}
-      <header className="flex items-center justify-between border-b border-stone-200 bg-white px-5 py-3 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="h-8 w-8 rounded bg-[#b5622a]" />
-          <div>
+      <header className="flex items-center justify-between gap-3 border-b border-stone-200 bg-white px-3 py-2 shadow-sm sm:px-5 sm:py-3">
+        <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+          <div className="h-7 w-7 shrink-0 rounded bg-[#b5622a] sm:h-8 sm:w-8" />
+          <div className="min-w-0">
             <h1 className="text-sm font-semibold tracking-wide text-stone-900">
               SDWL AI LENS
             </h1>
-            <p className="text-[11px] text-stone-500">
+            <p className="truncate text-[11px] text-stone-500">
               Signed in as {session?.user?.email}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1 sm:gap-2">
           <button
             onClick={handleRefresh}
             disabled={status === "loading"}
-            className="rounded-md border border-stone-300 bg-white px-3 py-1.5 text-xs font-medium text-stone-700 transition hover:border-[#b5622a] hover:text-[#b5622a] disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md border border-stone-300 bg-white px-3 py-2 text-xs font-medium text-stone-700 transition hover:border-[#b5622a] hover:text-[#b5622a] disabled:cursor-not-allowed disabled:opacity-50 sm:py-1.5"
           >
-            {status === "loading" ? "Refreshing…" : "↻ Refresh data"}
+            {status === "loading" ? (
+              "Refreshing…"
+            ) : (
+              <>
+                ↻ Refresh<span className="hidden sm:inline"> data</span>
+              </>
+            )}
           </button>
           <button
             onClick={() => signOut({ callbackUrl: "/login" })}
-            className="rounded-md px-3 py-1.5 text-xs font-medium text-stone-500 transition hover:text-stone-900"
+            className="rounded-md px-2.5 py-2 text-xs font-medium text-stone-500 transition hover:text-stone-900 sm:px-3 sm:py-1.5"
           >
             Sign out
           </button>

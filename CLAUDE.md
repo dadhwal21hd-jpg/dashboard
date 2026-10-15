@@ -640,6 +640,31 @@ re-applies the Sub Cut dropdown + search afterwards. It used to rebuild
 everything collapsed, which made the Sort dropdown look broken and silently
 dropped an active sub-cut filter.
 
+## Mobile layout (Oct 2026)
+
+All in the template's "SMALL SCREENS" block at the end of the stylesheet;
+nothing in it applies above 900px, and desktop was verified element-for-element
+unchanged. Breakpoints: **≤900px** the tab strip (`.nav`) becomes the sticky bar
+instead of the header; **≤640px** phone layout (header on a 2-row grid, KPI value
+sized with `clamp()` so two cards fit a row, sub-cut group stats wrap, drill
+cards 2-up, lock dialog full-width and high so the keyboard can't cover it).
+
+- **Filter bar folds on phones** behind `#gf-toggle`, with `#gf-summary`
+  (`renderFilterSummary()`) saying what's active. On desktop its wrappers
+  (`.gf-body/.gf-grp/.gf-field`) are `display:contents`, so the controls are
+  still one flat flex row — keep it that way or the desktop bar changes.
+- **Every wide table scrolls sideways, never clips.** A table in a card that
+  also holds a title goes in a `.tbl-scroll` div; `#drill-style-table` scrolls
+  itself. Don't put `overflow:hidden` on a box around a table (it used to cut
+  off the Reorder and Returns tables, and 20px of Returns even on desktop).
+- **Touch screens get 16px inputs** (`@media (pointer:coarse)`): iOS zooms into
+  any smaller input and never zooms back out.
+- `drawBarLine()` thins month labels to the plot width; `switchTab('overview')`
+  and a width-only `resize` listener redraw it, since a chart drawn while its
+  tab was hidden has no width to measure.
+- The Next page is `h-dvh`, not `h-screen`: on phones `100vh` ran the bottom of
+  the iframe behind the browser toolbar.
+
 ## Customer clusters
 
 [src/lib/clusters.ts](src/lib/clusters.ts) hand-maps duplicate/related customer
