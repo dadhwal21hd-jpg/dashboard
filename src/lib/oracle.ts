@@ -21,9 +21,20 @@
  *   - A bill is Bill_No + Bill_Dt (+ buyer); bill numbers repeat across Oracle's
  *     books, so nothing here keys on Bill_No alone.
  *
+ * HISTORY  The ledger only starts 1 Apr 2026. Until the API history is loaded, the
+ *          DASH sheet tab (Apr 2021 onward, same Oracle columns, price in "BP")
+ *          fills in everything BEFORE the ledger's first day — see
+ *          fetchOracleHistory(). Once the ledger itself reaches back further,
+ *          the DASH rows it now covers drop out by themselves (nothing is
+ *          counted twice, whatever the overlap).
+ *
  * Env vars: PROJECT_URL, ANON_KEY (same Supabase project as the stock tables).
+ *           GOOGLE_HISTORY_RANGE (optional, default "DASH") — tab in the
+ *           GOOGLE_SHEET_ID spreadsheet; set to "off" to skip the history.
  */
 import type { SheetRow } from "./types";
+import { parseDate } from "./processor";
+import { fetchRange } from "./sheets";
 
 export function oracleConfigured(): boolean {
   return !!(process.env.PROJECT_URL && process.env.ANON_KEY);
@@ -209,4 +220,53 @@ export async function fetchOracleReturns(force = false): Promise<{ rows: SheetRo
     const keep = lastGoodReturns ?? { rows: [], fetchedAt: Date.now() };
     return { ...keep, fromCache: true };
   }
+}
+
+// ── Pre-ledger history (DASH sheet) ─────────────────────────────────────────
+
+/** The DASH tab, with names folded. ~80k rows and ~15 s to read cold, and it
+ *  never changes, so it is kept for an hour (a stale copy is also what is used
+ *  if a later read fails — better than dropping five years of figures). */
+let history: { rows: SheetRow[]; at: number } | null = null;
+const HISTORY_TTL_MS = 60 * 60 * 1000;
+
+const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+
+async function readHistory(range: string, force: boolean): Promise<SheetRow[]> {
+  if (!force && history && Date.now() - history.at < HISTORY_TTL_MS) return history.rows;
+  try {
+    const [{ rows }, aliases] = await Promise.all([
+      fetchRange(process.env.GOOGLE_SHEET_ID as string, range, force),
+      loadAliases(),
+    ]);
+    const out = rows.map((r) => {
+      const buyer = s(r["Buyer Name"]);
+      return { ...r, "Buyer Name": aliases.get(aliasKey(buyer)) ?? buyer };
+    });
+    history = { rows: out, at: Date.now() };
+    return out;
+  } catch (err) {
+    console.error("History (DASH) read failed:", err instanceof Error ? err.message : err);
+    return history?.rows ?? [];
+  }
+}
+
+/** DASH rows dated strictly before the ledger's earliest bill. Takes the ledger
+ *  as a promise so the (slow) sheet read can start at the same time as it.
+ *  Never throws. */
+export async function fetchOracleHistory(ledger: Promise<SheetRow[]>, force = false): Promise<SheetRow[]> {
+  const range = (process.env.GOOGLE_HISTORY_RANGE ?? "DASH").trim();
+  if (!range || range.toLowerCase() === "off" || !process.env.GOOGLE_SHEET_ID) return [];
+
+  const [rows, ledgerRows] = await Promise.all([readHistory(range, force), ledger]);
+  let firstDay = "";
+  for (const r of ledgerRows) {
+    const d = parseDate(r["Bill Dt."]);
+    if (d && (!firstDay || dayKey(d) < firstDay)) firstDay = dayKey(d);
+  }
+  if (!firstDay) return [];
+  return rows.filter((r) => {
+    const d = parseDate(r["Bill Dt."]);
+    return !!d && dayKey(d) < firstDay; // undated rows can't be placed — skipped
+  });
 }

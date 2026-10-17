@@ -308,8 +308,14 @@ Rules that came with the data (from the WIP_HEART side):
   (Prakash Ji, Ankur Ji, Pathak Ji, Kriti, Jyoti, Manoj Ji, Raja Sir): the alias
   table maps some of them onto real customers (e.g. "prakash ji" → "Dimple
   Fashion"), which would bury internal dispatches in a customer's revenue.
-- The ledger starts **1 Apr 2026**. The 2021–Mar 2026 history lives only in the
-  DASH sheet and is not read any more (see the open question in the hand-off).
+- The ledger starts **1 Apr 2026**. Everything before its first day comes from the
+  **DASH sheet tab** (`fetchOracleHistory()`; `GOOGLE_HISTORY_RANGE`, default `DASH`,
+  `off` to skip) — Jan 2021 onward, 73k rows, names folded through the same aliases,
+  read in parallel with the ledger and kept 1 h (cold read ~15 s, hence
+  `maxDuration = 60`). Stopgap: when the API history is loaded the ledger reaches
+  back further and the DASH rows it now covers drop out by themselves. DASH has no
+  Remarks column and no pre-April Goods Returns, so history is gross, and its
+  non-gown lines (kurti, saree, potli) fall into Labotanica by the default rule.
 - Cached per lambda instance for 5 min (a 17.8k-row read is ~3.5 MB, over the
   2 MB Next Data Cache limit, same reasoning as sheets.ts).
 

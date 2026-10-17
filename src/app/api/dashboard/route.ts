@@ -34,7 +34,7 @@ import { brotliCompress, gzip, constants as zlibConstants } from "node:zlib";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { fetchSheetRows, fetchReturnsRows } from "@/lib/sheets";
-import { fetchOracleSales, fetchOracleReturns, oracleConfigured } from "@/lib/oracle";
+import { fetchOracleSales, fetchOracleReturns, fetchOracleHistory, oracleConfigured } from "@/lib/oracle";
 import { process as runProcessor } from "@/lib/processor";
 import { fetchDesignMap, designsConfigured } from "@/lib/designs";
 import { getStableDesignToken } from "@/lib/signing";
@@ -42,6 +42,7 @@ import { clearDriveCache } from "@/lib/drive";
 import { fetchStockMap } from "@/lib/stock";
 
 export const dynamic = "force-dynamic"; // never statically cache this route
+export const maxDuration = 60; // a cold start reads ~80k history rows from Sheets (~15 s)
 
 const brotli = promisify(brotliCompress);
 const gz = promisify(gzip);
@@ -86,12 +87,15 @@ export async function GET(req: NextRequest) {
     // Supabase is the system of record now. If it is configured but fails, that
     // is an error to show — NOT a silent drop back to the (stale) sheet.
     const useOracle = oracleConfigured();
-    const [{ rows, fetchedAt, fromCache }, { rows: returnRows }] = await Promise.all(
-      useOracle
-        ? [fetchOracleSales(force), fetchOracleReturns(force)]
-        : [fetchSheetRows(force), fetchReturnsRows(force)],
-    );
-    const data = runProcessor(rows, returnRows);
+    // The ledger starts 1 Apr 2026; DASH supplies everything before it. Its read
+    // is the slow one, so it runs alongside the ledger's, not after.
+    const sales = useOracle ? fetchOracleSales(force) : fetchSheetRows(force);
+    const [{ rows, fetchedAt, fromCache }, { rows: returnRows }, history] = await Promise.all([
+      sales,
+      useOracle ? fetchOracleReturns(force) : fetchReturnsRows(force),
+      useOracle ? fetchOracleHistory(sales.then((s) => s.rows), force) : Promise.resolve([]),
+    ]);
+    const data = runProcessor(history.length ? [...history, ...rows] : rows, returnRows);
 
     // Design thumbnails (optional feature — absent env vars ⇒ empty map).
     // Only the *style numbers that have an image and actually appear in the

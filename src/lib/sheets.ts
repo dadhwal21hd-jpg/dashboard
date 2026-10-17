@@ -36,7 +36,7 @@ function quoteRange(range: string): string {
   return /\s/.test(r) ? `'${r.replace(/'/g, "''")}'` : r;
 }
 
-async function fetchRange(
+export async function fetchRange(
   sheetId: string,
   range: string,
   force: boolean,
