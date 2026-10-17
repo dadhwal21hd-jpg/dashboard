@@ -180,7 +180,7 @@ select:focus,input:focus{outline:none;border-color:var(--accent);}
    in; it stays (invisible) after the photo loads so nothing shifts. */
 .dz-pic{display:grid;place-items:center;}
 .dz-pic > img{grid-area:1/1;}
-.dz-pic > .dz-ph{height:64vh;width:auto;max-width:100%;filter:blur(3px);transition:opacity .3s;}
+.dz-pic > .dz-ph{height:64vh;width:auto;max-width:100%;filter:blur(3px);transition:opacity .3s;pointer-events:none;}
 .dz-pic > .dz-full{opacity:0;transition:opacity .3s;}
 .dz-pic > .dz-full.loaded{opacity:1;}
 .dz-nav{position:absolute;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.92);border:1px solid var(--border);border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:15px;color:var(--text2);}
@@ -4059,11 +4059,11 @@ function designThumb(sn, size){
   const src = designURL({style: resolved.style, sz: size === 'md' ? 'w220' : 'w160'});
   const approxStyle = resolved.exact ? '' : 'border-style:dashed;';
   const title = resolved.exact
-    ? `Design for #${esc(sn)} — click to enlarge`
+    ? `Design for #${esc(sn)} — click to enlarge (drag the big photo from there to share)`
     : `No photo for this exact colourway (#${esc(sn)}) — showing base style #${esc(resolved.style)} instead. Click to enlarge.`;
   return `<span class="dt ${cls}" style="${approxStyle}" onclick="event.stopPropagation();openDesign('${esc(String(sn)).replace(/'/g,"\\'")}')" title="${title}">
     <span class="dt-ph">◌</span>
-    <img loading="lazy" decoding="async" src="${src}" alt="Design ${esc(sn)}"
+    <img loading="lazy" decoding="async" draggable="false" src="${src}" alt="Design ${esc(sn)}"
          onload="this.classList.add('loaded')"
          onerror="this.closest('.dt').classList.add('dt-empty');this.remove()">
     ${resolved.exact ? '' : '<span class="dt-approx" title="Approximate — base style, not this exact colourway">~</span>'}
@@ -4107,7 +4107,7 @@ function dzLoadMain(){
   // the browser cache, so it's shown enlarged at once and the full-size photo
   // (~230 KB) fades in over it — rather than an empty box until it arrives.
   document.getElementById('dz-stage').innerHTML =
-    `<div class="dz-pic"><img class="dz-ph" src="${designURL({style: _dzStyle, sz: 'w160'})}" alt="" onerror="this.remove()">
+    `<div class="dz-pic"><img class="dz-ph" draggable="false" src="${designURL({style: _dzStyle, sz: 'w160'})}" alt="" onerror="this.remove()">
      <img class="dz-full" src="${designURL({style: _dzStyle, sz: 'w1200', ...bust})}" alt="Design ${esc(_dzStyle)}"
           fetchpriority="high" onload="this.classList.add('loaded');this.previousElementSibling.style.opacity=0" onerror="dzFail()"></div>`;
 }
