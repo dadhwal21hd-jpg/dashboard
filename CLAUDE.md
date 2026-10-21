@@ -308,6 +308,7 @@ Rules that came with the data (from the WIP_HEART side):
   (Prakash Ji, Ankur Ji, Pathak Ji, Kriti, Jyoti, Manoj Ji, Raja Sir): the alias
   table maps some of them onto real customers (e.g. "prakash ji" → "Dimple
   Fashion"), which would bury internal dispatches in a customer's revenue.
+- **SALES_SOURCE (Oct 2026): default `dash` — sales come from the whole DASH tab, Supabase ledger not read (owner request, until he says switch). `SALES_SOURCE=supabase` restores ledger + DASH-before-April. Returns still from Supabase.**
 - The ledger starts **1 Apr 2026**. Everything before its first day comes from the
   **DASH sheet tab** (`fetchOracleHistory()`; `GOOGLE_HISTORY_RANGE`, default `DASH`,
   `off` to skip) — Jan 2021 onward, 73k rows, names folded through the same aliases,

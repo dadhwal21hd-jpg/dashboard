@@ -34,7 +34,7 @@ import { brotliCompress, gzip, constants as zlibConstants } from "node:zlib";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { fetchSheetRows, fetchReturnsRows } from "@/lib/sheets";
-import { fetchOracleSales, fetchOracleReturns, fetchOracleHistory, oracleConfigured } from "@/lib/oracle";
+import { fetchOracleSales, fetchOracleReturns, fetchOracleHistory, fetchDashSales, useDashSales, oracleConfigured } from "@/lib/oracle";
 import { process as runProcessor } from "@/lib/processor";
 import { fetchDesignMap, designsConfigured } from "@/lib/designs";
 import { getStableDesignToken } from "@/lib/signing";
@@ -89,11 +89,12 @@ export async function GET(req: NextRequest) {
     const useOracle = oracleConfigured();
     // The ledger starts 1 Apr 2026; DASH supplies everything before it. Its read
     // is the slow one, so it runs alongside the ledger's, not after.
-    const sales = useOracle ? fetchOracleSales(force) : fetchSheetRows(force);
+    const dash = useOracle && useDashSales(); // owner switch: sales from the DASH tab only
+    const sales = dash ? fetchDashSales(force) : useOracle ? fetchOracleSales(force) : fetchSheetRows(force);
     const [{ rows, fetchedAt, fromCache }, { rows: returnRows }, history] = await Promise.all([
       sales,
       useOracle ? fetchOracleReturns(force) : fetchReturnsRows(force),
-      useOracle ? fetchOracleHistory(sales.then((s) => s.rows), force) : Promise.resolve([]),
+      useOracle && !dash ? fetchOracleHistory(sales.then((s) => s.rows), force) : Promise.resolve([]),
     ]);
     const data = runProcessor(history.length ? [...history, ...rows] : rows, returnRows);
 

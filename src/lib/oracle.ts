@@ -270,3 +270,20 @@ export async function fetchOracleHistory(ledger: Promise<SheetRow[]>, force = fa
     return !!d && dayKey(d) < firstDay; // undated rows can't be placed — skipped
   });
 }
+
+/** Sales source switch. Default "dash": the whole DASH tab is the sales
+ *  history and the Supabase ledger is not read. Set SALES_SOURCE=supabase to
+ *  go back to ledger (+ DASH before 1 Apr). Changed by the owner, on request. */
+export function useDashSales(): boolean {
+  return (process.env.SALES_SOURCE ?? "dash").trim().toLowerCase() !== "supabase";
+}
+
+/** Every DASH row (aliases folded). Throws if nothing came back, so a failed
+ *  read shows an error instead of an empty dashboard. */
+export async function fetchDashSales(force = false): Promise<{ rows: SheetRow[]; fetchedAt: number; fromCache: boolean }> {
+  const range = (process.env.GOOGLE_HISTORY_RANGE ?? "DASH").trim() || "DASH";
+  const cached = !force && !!history && Date.now() - history.at < HISTORY_TTL_MS;
+  const rows = await readHistory(range, force);
+  if (!rows.length) throw new Error("DASH sheet returned no rows");
+  return { rows, fetchedAt: history?.at ?? Date.now(), fromCache: cached };
+}
