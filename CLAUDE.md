@@ -643,6 +643,19 @@ whether the row had anything else recognisable in it. The two bad rows were
 fixed at the source by the user during this investigation, not by any code
 change here.
 
+## Financial year (Nov 2026)
+
+Every "year" on the dashboard is the Indian financial year, 1 Apr – 31 Mar,
+keyed `FY25-26` (`fyKey()`, `fyRange()`, `FY_MONTHS` = Apr→Mar in the template).
+The quick date buttons (`renderFyQuick()`), Compare mode (`cmpCoverage()` is keyed
+by FY; month chips and charts run Apr→Mar) and the customer drill all use it.
+The customer drill's **Month on month** panel (`renderDrillMonths()`) puts the
+customer's FYs side by side Apr→Mar (default: their latest two; chips to pick,
+All / Last 2, Revenue / Units). Dispatched, before returns; From/To ignored there.
+A month with no data yet in an FY shows "—", not 0, and an unfinished FY is
+compared on the same months only. `npm test` runs `tests/template.test.mjs`, which
+pulls these functions out of the template by name and tests them.
+
 ## Overview chart + Compare mode
 
 **Monthly chart** is `drawBarLine()`: HTML bars (units dispatched) plus an SVG

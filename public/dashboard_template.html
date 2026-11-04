@@ -1018,11 +1018,7 @@ body.cmp-on .cmp-na{display:block;}
 
     <div class="gf-grp gf-quick">
       <button class="btn btn-outline btn-sm" onclick="setQuick('all')">All Time</button>
-      <button class="btn btn-outline btn-sm" onclick="setQuick('2022')">2022</button>
-      <button class="btn btn-outline btn-sm" onclick="setQuick('2023')">2023</button>
-      <button class="btn btn-outline btn-sm" onclick="setQuick('2024')">2024</button>
-      <button class="btn btn-outline btn-sm" onclick="setQuick('2025')">2025</button>
-      <button class="btn btn-outline btn-sm" onclick="setQuick('2026')">2026</button>
+      <span id="fy-quick" style="display:contents"></span>
       <button class="btn btn-outline btn-sm" onclick="setQuick('last6')">Last 6 Mo</button>
       <button class="btn btn-outline btn-sm" onclick="setQuick('last3')">Last 3 Mo</button>
     </div>
@@ -1168,6 +1164,7 @@ body.cmp-on .cmp-na{display:block;}
       <button onclick="closeDrill()" class="btn btn-outline btn-sm">✕ Close</button>
     </div>
     <div id="drill-brands" style="display:none;padding:10px 18px;border-bottom:1px solid var(--border);background:#fffdfb;gap:8px;align-items:center;flex-wrap:wrap"></div>
+    <div id="drill-months" style="display:none;padding:12px 18px;border-bottom:1px solid var(--border)"></div>
     <div style="padding:14px 18px;border-bottom:1px solid var(--border)">
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);font-family:'IBM Plex Mono',monospace;margin-bottom:10px">Top Sub Cut Styles — click to see style numbers</div>
       <div id="drill-sc-cards"></div>
@@ -1746,10 +1743,26 @@ function applyDateFilter() { applyGlobalFilter(); } // backwards compat
 function setQuick(period) {
   const fd=document.getElementById('date-from'), td=document.getElementById('date-to');
   if (period==='all')   { fd.value=''; td.value=''; }
-  else if(/^\d{4}$/.test(period)) { fd.value=`${period}-01-01`; td.value=`${period}-12-31`; }
+  else if(/^FY\d{2}-\d{2}$/.test(period)) { [fd.value, td.value] = fyRange(period); }
   else if(period==='last6') { const d=new Date(); d.setMonth(d.getMonth()-6); fd.value=d.toISOString().slice(0,10); td.value=new Date().toISOString().slice(0,10); }
   else if(period==='last3') { const d=new Date(); d.setMonth(d.getMonth()-3); fd.value=d.toISOString().slice(0,10); td.value=new Date().toISOString().slice(0,10); }
   applyGlobalFilter();
+}
+
+/** One quick button per financial year in the data (newest last). */
+function renderFyQuick() {
+  const el = document.getElementById('fy-quick'); if (!el) return;
+  el.innerHTML = cmpAllYears().map(fy =>
+    `<button class="btn btn-outline btn-sm" onclick="setQuick('${fy}')" title="1 Apr ${fyRange(fy)[0].slice(0,4)} – 31 Mar ${fyRange(fy)[1].slice(0,4)}">${fy}</button>`).join('');
+}
+
+/** "FY25-26" when From/To is exactly one financial year, else null. */
+function fyOfRange(from, to) {
+  if (!from || !to) return null;
+  const fy = fyKey(from);
+  if (!fy) return null;
+  const [a, b] = fyRange(fy);
+  return from === a && to === b ? fy : null;
 }
 
 function clearAllFilters() {
@@ -1775,9 +1788,8 @@ function renderFilterSummary() {
   if (CMP.on) {
     parts.push(`⇄ ${cmpYears().join(' vs ')}`);
   } else if (DATE_FROM || DATE_TO) {
-    const fullYear = DATE_FROM && DATE_TO && DATE_FROM.slice(0,4) === DATE_TO.slice(0,4)
-      && DATE_FROM.slice(5) === '01-01' && DATE_TO.slice(5) === '12-31';
-    parts.push(fullYear ? DATE_FROM.slice(0,4)
+    const fy = fyOfRange(DATE_FROM, DATE_TO);
+    parts.push(fy ? fy
       : DATE_FROM && DATE_TO ? `${fmtDate(DATE_FROM)} → ${fmtDate(DATE_TO)}`
       : DATE_FROM ? `from ${fmtDate(DATE_FROM)}` : `to ${fmtDate(DATE_TO)}`);
   }
@@ -2010,30 +2022,49 @@ function drawBarLine(id, data) {
 // (gross), same as the normal chart.
 // ══════════════════════════════════════════════════════════════
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+// The business runs on the Indian financial year, 1 Apr – 31 Mar. Every "year"
+// on the dashboard (quick buttons, Compare, the customer month-on-month) is
+// one of these, keyed "FY25-26" (= Apr 2025 – Mar 2026), and months run Apr→Mar.
+const FY_MONTHS = [4,5,6,7,8,9,10,11,12,1,2,3];
+/** "2026-03-31" → "FY25-26", "2026-04-01" → "FY26-27"; null if no date. */
+function fyKey(ds) {
+  if (!ds) return null;
+  const y = +String(ds).slice(0,4), m = +String(ds).slice(5,7);
+  if (!y || !m) return null;
+  const s = m >= 4 ? y : y - 1;
+  return `FY${String(s % 100).padStart(2,'0')}-${String((s + 1) % 100).padStart(2,'0')}`;
+}
+/** "FY25-26" → ["2025-04-01", "2026-03-31"]. Two-digit years are 20xx, except 99 (1999). */
+function fyRange(key) {
+  const a = +key.slice(2,4), s = a === 99 ? 1999 : 2000 + a;
+  return [`${s}-04-01`, `${s + 1}-03-31`];
+}
 let CMP = { on:false, mode:'years', years:null, months:[] };   // years null = every year in the data
 let _cmpCov = null;
 
-/** year → Set(month numbers that have ANY sales row), over unfiltered data —
+/** financial year → Set(month numbers that have ANY sales row), over unfiltered data —
  *  this is "does the data exist", used to flag partial years honestly. */
 function cmpCoverage() {
   if (_cmpCov && _cmpCov.d === D) return _cmpCov.map;
   const map = {};
   for (const r of D.raw) {
     const ds = rowDateStr(r); if (!ds) continue;
-    (map[ds.slice(0,4)] = map[ds.slice(0,4)] || new Set()).add(+ds.slice(5,7));
+    const fy = fyKey(ds);
+    (map[fy] = map[fy] || new Set()).add(+ds.slice(5,7));
   }
   _cmpCov = { d:D, map };
   return map;
 }
 function cmpAllYears() { return Object.keys(cmpCoverage()).sort(); }
 function cmpYears() { const all = cmpAllYears(); return CMP.years ? all.filter(y => CMP.years.includes(y)) : all; }
-function cmpMonths() { return CMP.mode === 'months' ? [...CMP.months].sort((a,b) => a-b) : [1,2,3,4,5,6,7,8,9,10,11,12]; }
+function cmpMonths() { return CMP.mode === 'months' ? FY_MONTHS.filter(m => CMP.months.includes(m)) : [...FY_MONTHS]; }
 
-/** "Jan–Mar, Jun" from [1,2,3,6]. */
+/** "Apr–Jun, Dec–Mar" from [4,5,6,12,1,2,3] — read in financial-year order. */
 function monthsLabel(ms) {
-  const s = [...ms].sort((a,b) => a-b), out = [];
+  const s = FY_MONTHS.filter(m => ms.includes(m)), out = [];
+  const next = m => m === 12 ? 1 : m + 1;
   for (let i = 0; i < s.length; i++) {
-    let j = i; while (j + 1 < s.length && s[j+1] === s[j] + 1) j++;
+    let j = i; while (j + 1 < s.length && s[j+1] === next(s[j])) j++;
     out.push(j > i ? `${MONTHS_SHORT[s[i]-1]}–${MONTHS_SHORT[s[j]-1]}` : MONTHS_SHORT[s[i]-1]);
     i = j;
   }
@@ -2067,7 +2098,7 @@ function getCMP() {
   const P = base.map(p => ({ ...p, qty:0, rev:0, cust:new Set(), styles:{}, subcuts:{}, customers:{}, monthly:{}, custSub:{} }));
   const locate = r => {
     const ds = rowDateStr(r); if (!ds) return null;
-    const i = idx[ds.slice(0,4)]; if (i === undefined) return null;
+    const i = idx[fyKey(ds)]; if (i === undefined) return null;
     const m = +ds.slice(5,7); if (!mset.has(m)) return null;
     return { p:P[i], m };
   };
@@ -2160,7 +2191,7 @@ function renderCmpBar() {
     return `<span class="cmp-chip${on ? ' on' : ''}" style="${on ? `background:${cmpYearColor(y)}` : ''}" onclick="cmpToggleYear('${y}')">${y}</span>`;
   }).join('');
   const monthChips = CMP.mode === 'months'
-    ? `<div class="cmp-grp"><span class="filter-label">Months:</span>${MONTHS_SHORT.map((m, i) => `<span class="cmp-chip mo${CMP.months.includes(i+1) ? ' on' : ''}" onclick="cmpToggleMonth(${i+1})">${m}</span>`).join('')}
+    ? `<div class="cmp-grp"><span class="filter-label">Months:</span>${FY_MONTHS.map(m => `<span class="cmp-chip mo${CMP.months.includes(m) ? ' on' : ''}" onclick="cmpToggleMonth(${m})">${MONTHS_SHORT[m-1]}</span>`).join('')}
         <span class="cmp-chip link" onclick="cmpPreset('ytd')">Year to date</span><span class="cmp-chip link" onclick="cmpPreset('allmonths')">All 12</span></div>`
     : '';
   const partial = P.filter(p => p.partial);
@@ -2171,14 +2202,14 @@ function renderCmpBar() {
   bar.innerHTML = `
     <span style="font-family:'Syne',sans-serif;font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px">⇄ Compare</span>
     <div class="cmp-grp">
-      <span class="cmp-chip mo${CMP.mode === 'years' ? ' on' : ''}" onclick="cmpSetMode('years')">Full years</span>
+      <span class="cmp-chip mo${CMP.mode === 'years' ? ' on' : ''}" onclick="cmpSetMode('years')">Full FYs</span>
       <span class="cmp-chip mo${CMP.mode === 'months' ? ' on' : ''}" onclick="cmpSetMode('months')">Pick months</span>
     </div>
-    <div class="cmp-grp"><span class="filter-label">Years:</span>${yearChips}
+    <div class="cmp-grp"><span class="filter-label">Financial years:</span>${yearChips}
       <span class="cmp-chip link" onclick="cmpPreset('allyears')">All</span><span class="cmp-chip link" onclick="cmpPreset('last2')">Last 2</span></div>
     ${monthChips}
     ${warn}
-    <div class="cmp-note">Comparing ${sel.join(' vs ')}${CMP.mode === 'months' ? ` · ${monthsLabel(CMP.months)} of each year` : ''}. The From/To dates above are ignored while comparing — brand, qty and MRP filters still apply. Units and revenue are net of returns; the monthly chart shows dispatches. <a href="#" onclick="toggleCompare();return false">Exit compare</a></div>`;
+    <div class="cmp-note">Comparing ${sel.join(' vs ')}${CMP.mode === 'months' ? ` · ${monthsLabel(CMP.months)} of each FY` : ' (Apr–Mar)'}. The From/To dates above are ignored while comparing — brand, qty and MRP filters still apply. Units and revenue are net of returns; the monthly chart shows dispatches. <a href="#" onclick="toggleCompare();return false">Exit compare</a></div>`;
 }
 function onCompareChange() {
   renderCmpBar();
@@ -2219,7 +2250,7 @@ function drawCmpBars(id, C) {
 function cmpItem(label, vals, P, maxV, fmtFn, nameCls) {
   const last = vals.length - 1;
   return `<div class="bar-item"><div class="bar-label"><span class="bar-name${nameCls ? ' ' + nameCls : ''}">${label}</span><span class="bar-val">${last > 0 ? cmpDelta(vals[last], vals[last-1]) : ''}</span></div>
-    ${P.map((p, i) => `<div class="cmp-mini"><span class="cmp-mini-y" style="color:${p.color}">'${esc(p.label.slice(2))}</span><div class="bar-track"><div class="bar-fill" style="width:${(Math.max(vals[i],0) / (maxV || 1) * 100).toFixed(1)}%;background:${p.color}"></div></div><span class="cmp-mini-v">${fmtFn(vals[i])}</span></div>`).join('')}
+    ${P.map((p, i) => `<div class="cmp-mini"><span class="cmp-mini-y" style="color:${p.color}">${esc(p.label.slice(2))}</span><div class="bar-track"><div class="bar-fill" style="width:${(Math.max(vals[i],0) / (maxV || 1) * 100).toFixed(1)}%;background:${p.color}"></div></div><span class="cmp-mini-v">${fmtFn(vals[i])}</span></div>`).join('')}
   </div>`;
 }
 
@@ -2904,6 +2935,8 @@ function openDrill(custName, drillData, rowEl) {
   entries.forEach(([sc, data]) => { window._scMap[sc] = data; });
 
   renderDrillBrands();
+  window._dmFys = null;
+  renderDrillMonths();
 
   document.getElementById('drill-sc-cards').innerHTML = entries.map(([sc, data])=>{
     if (!sc) return '';
@@ -2966,10 +2999,15 @@ function openDrillCompare(custName, rowEl) {
     const safeSc = sc.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
     return `<div class="drill-sc-card" style="border-color:${col}30;border-top-color:${col}" onclick="openStyleDrillByKey('${safeSc}')">
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px"><span style="font-family:'Syne',sans-serif;font-weight:700;font-size:13px;color:${col}">${esc(sc)}</span>${L > 1 ? cmpDelta(s.v[last].qty, s.v[last-1].qty) : ''}</div>
-      ${P.map((p, i) => `<div class="cmp-mini"><span class="cmp-mini-y" style="color:${p.color}">'${esc(p.label.slice(2))}</span><div class="cmp-track"><i style="width:${(Math.max(s.v[i].qty,0)/maxQ*100).toFixed(0)}%;background:${p.color}"></i></div><span class="cmp-mini-v">${fN(s.v[i].qty)}</span></div>`).join('')}
+      ${P.map((p, i) => `<div class="cmp-mini"><span class="cmp-mini-y" style="color:${p.color}">${esc(p.label.slice(2))}</span><div class="cmp-track"><i style="width:${(Math.max(s.v[i].qty,0)/maxQ*100).toFixed(0)}%;background:${p.color}"></i></div><span class="cmp-mini-v">${fN(s.v[i].qty)}</span></div>`).join('')}
       <div style="font-size:9px;color:var(--text3);margin-top:4px;font-family:'IBM Plex Mono',monospace">tap → style numbers</div>
     </div>`;
   }).join('') : `<div style="grid-column:1/-1;font-size:12px;color:var(--text3);padding:8px 0">No orders from this customer in ${P.map(p => p.label).join(', ')}${CMP.mode === 'months' ? ` (${monthsLabel(C.months)})` : ''}.</div>`;
+
+  // Month on month here too, starting on the financial years being compared.
+  window._drillMembers = new Set(members);
+  window._dmFys = [...cmpYears()];
+  renderDrillMonths();
 
   document.getElementById('drill-panel').style.display = 'block';
   document.getElementById('drill-panel').scrollIntoView({ behavior:'smooth', block:'nearest' });
@@ -3106,6 +3144,126 @@ function renderDrillBrands() {
   });
   el.style.display = parts.length ? 'flex' : 'none';
   el.innerHTML = parts.length ? `<span style="font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-right:6px">By brand</span>${parts.join('')}` : '';
+}
+
+/** One customer's (or cluster's) dispatches by financial year and month:
+ *  { "FY25-26": { 4: {q, rev}, ... } }. Gross — dispatch activity, same rule
+ *  as the monthly charts; returns are not dispatch months. */
+function custFyMonthly(rows, members) {
+  const acc = {};
+  for (const r of rows) {
+    if (!members.has(r.c)) continue;
+    const ds = rowDateStr(r); if (!ds) continue;
+    const fy = fyKey(ds), m = +ds.slice(5,7);
+    const y = acc[fy] || (acc[fy] = {});
+    const a = y[m] || (y[m] = { q:0, rev:0 });
+    a.q += r.q; a.rev += r.q * r.p;
+  }
+  return acc;
+}
+
+/** Table rows Apr→Mar for the chosen FYs. A value is null (not 0) for a month
+ *  the business has no data for yet in that FY — a future month isn't a zero.
+ *  delta = newest FY vs the one before it. sameMonthsPrev = the previous FY's
+ *  total over only the months the newest FY has, for a fair year-to-date read. */
+function fyCompareRows(acc, fys, cov, metric) {
+  const n = fys.length;
+  const rows = FY_MONTHS.map(m => {
+    const v = fys.map(fy => (cov[fy] && cov[fy].has(m)) ? ((acc[fy] && acc[fy][m] && acc[fy][m][metric]) || 0) : null);
+    const cur = v[n-1], prev = v[n-2];
+    const delta = n > 1 && cur !== null && prev != null && prev > 0 ? (cur - prev) / prev : null;
+    return { m, v, delta };
+  });
+  const totals = fys.map((_, i) => rows.reduce((t, r) => t + (r.v[i] || 0), 0));
+  const sameMonthsPrev = n > 1 ? rows.reduce((t, r) => t + (r.v[n-1] !== null ? (r.v[n-2] || 0) : 0), 0) : null;
+  return { rows, totals, sameMonthsPrev };
+}
+
+/** Calendar "YYYY-MM" of a month inside a financial year: ("FY25-26", 12) → "2025-12", ("FY25-26", 1) → "2026-01". */
+function fyMonthKey(fy, m) {
+  const s = +fyRange(fy)[0].slice(0,4);
+  return `${m >= 4 ? s : s + 1}-${String(m).padStart(2,'0')}`;
+}
+
+/** Starting pick: the customer's two most recent financial years. */
+function drillFyDefault(fys) { return fys.slice(-2); }
+
+function drillFyToggle(fy) {
+  const sel = window._dmFys || [];
+  const i = sel.indexOf(fy);
+  if (i >= 0) { if (sel.length > 1) sel.splice(i, 1); } else sel.push(fy);
+  window._dmFys = sel.sort();
+  renderDrillMonths();
+}
+function drillFyPreset(which) {
+  window._dmFys = which === 'all' ? [...(window._dmAvail || [])] : drillFyDefault(window._dmAvail || []);
+  renderDrillMonths();
+}
+function drillFyMetric(m) { window._dmMetric = m; renderDrillMonths(); }
+
+/** Month on month for the customer being drilled, financial years side by
+ *  side (Apr→Mar). The years are picked here, so the From/To dates are
+ *  ignored; brand / qty / MRP filters still apply. Names are never shown, so
+ *  the lock needs nothing extra. */
+function renderDrillMonths() {
+  const el = document.getElementById('drill-months');
+  if (!el) return;
+  const members = window._drillMembers || new Set();
+  const acc = custFyMonthly(D.raw.filter(passesNonDateFilter), members);
+  const avail = Object.keys(acc).sort();
+  window._dmAvail = avail;
+  if (!avail.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  let fys = (window._dmFys || []).filter(fy => avail.includes(fy));
+  if (!fys.length) fys = drillFyDefault(avail);
+  window._dmFys = fys;
+  const metric = window._dmMetric === 'q' ? 'q' : 'rev';
+  const nowKey = new Date().toISOString().slice(0,7);
+  const show = v => v === null ? '<span style="color:var(--text3)">—</span>' : metric === 'q' ? fN(Math.round(v)) : fmt(Math.round(v));
+  const T = fyCompareRows(acc, fys, cmpCoverage(), metric);
+  const n = fys.length, cols = fys.map(cmpYearColor);
+  const maxV = Math.max(1, ...T.rows.flatMap(r => r.v.map(x => x || 0)));
+  const pctPill = d => d === null ? '<span class="cmp-d flat">—</span>'
+    : Math.abs(d) < 0.005 ? '<span class="cmp-d flat">±0%</span>'
+    : `<span class="cmp-d ${d > 0 ? 'up' : 'down'}">${d > 0 ? '▲' : '▼'}${Math.abs(d) >= 1 ? Math.round(Math.abs(d) * 100) : (Math.abs(d) * 100).toFixed(1)}%</span>`;
+  const td = "padding:5px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:12px;white-space:nowrap";
+  const th = "padding:6px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);white-space:nowrap";
+  const bar = (v, c) => v ? `<div class="cmp-track" style="height:3px;margin-top:3px;background:var(--border);border-radius:2px;overflow:hidden"><i style="display:block;height:100%;width:${(v / maxV * 100).toFixed(0)}%;background:${c}"></i></div>` : '';
+  const body = T.rows.map(r => `<tr style="border-top:1px solid var(--border)">
+      <td style="${td};text-align:left">${MONTHS_SHORT[r.m - 1]}</td>
+      ${r.v.map((v, i) => `<td style="${td}"><div>${v === null && fyMonthKey(fys[i], r.m) > nowKey ? '<span style="color:var(--text3);font-size:10px">not yet</span>' : show(v)}</div>${bar(v, cols[i])}</td>`).join('')}
+      ${n > 1 ? `<td style="${td}">${pctPill(r.delta)}</td>` : ''}
+    </tr>`).join('');
+  const newest = fys[n-1], newestPartial = T.rows.some(r => r.v[n-1] === null);
+  const totDelta = n > 1 && T.totals[n-2] > 0 ? (T.totals[n-1] - T.totals[n-2]) / T.totals[n-2] : null;
+  const ytdDelta = n > 1 && T.sameMonthsPrev > 0 ? (T.totals[n-1] - T.sameMonthsPrev) / T.sameMonthsPrev : null;
+  const have = T.rows.filter(r => r.v[n-1] !== null).map(r => r.m);
+  const foot = `<tr style="border-top:2px solid var(--border);font-weight:700">
+      <td style="${td};text-align:left">Total</td>
+      ${T.totals.map(v => `<td style="${td}">${show(v)}</td>`).join('')}
+      ${n > 1 ? `<td style="${td}">${newestPartial ? '' : pctPill(totDelta)}</td>` : ''}
+    </tr>`;
+  const ytdLine = `${n > 1 && newestPartial && have.length ? `<div style="padding:8px 0 0;font-size:11px;color:var(--text2)">
+      Same months only (${monthsLabel(have)}): ${esc(fys[n-2])} ${show(T.sameMonthsPrev)} → ${esc(newest)} ${show(T.totals[n-1])} ${pctPill(ytdDelta)}
+      <span style="color:var(--text3)">· ${esc(newest)} isn't over yet, so its full-year total isn't compared</span></div>` : ''}`;
+  const chip = fy => { const on = fys.includes(fy); return `<span class="cmp-chip${on ? ' on' : ''}" style="${on ? `background:${cmpYearColor(fy)}` : ''}" onclick="drillFyToggle('${fy}')">${fy}</span>`; };
+  el.style.display = 'block';
+  el.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);font-family:'IBM Plex Mono',monospace">Month on month · financial year (Apr–Mar)</div>
+      <div style="display:flex;gap:4px">
+        <span class="cmp-chip mo${metric === 'rev' ? ' on' : ''}" onclick="drillFyMetric('rev')">Revenue</span>
+        <span class="cmp-chip mo${metric === 'q' ? ' on' : ''}" onclick="drillFyMetric('q')">Units</span>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-bottom:8px">
+      ${avail.map(chip).join('')}
+      ${avail.length > 2 ? `<span class="cmp-chip link" onclick="drillFyPreset('last2')">Last 2</span><span class="cmp-chip link" onclick="drillFyPreset('all')">All</span>` : ''}
+    </div>
+    <div class="tbl-scroll"><table style="width:100%;border-collapse:collapse"><thead><tr>
+      <th style="${th};text-align:left">Month</th>
+      ${fys.map((fy, i) => `<th style="${th};color:${cols[i]}">${fy}<div style="font-size:8px;letter-spacing:0;text-transform:none;color:var(--text3);font-weight:400">Apr ${fyRange(fy)[0].slice(2,4)} – Mar ${fyRange(fy)[1].slice(2,4)}</div></th>`).join('')}
+      ${n > 1 ? `<th style="${th}">${esc(newest)} vs ${esc(fys[n-2])}</th>` : ''}
+    </tr></thead><tbody>${body}${foot}</tbody></table></div>${ytdLine}
+    <div style="font-size:10px;color:var(--text3);margin-top:6px">Dispatched, before Goods Returns · From/To dates are ignored here (pick the years above); brand, qty and MRP filters apply · Dec under FY25-26 is Dec 2025, under FY26-27 it is Dec 2026</div>`;
 }
 
 /** Returned-units cell for the customer drill: "—" when nothing came back. */
@@ -3997,6 +4155,7 @@ function initDashboard() {
 
   document.getElementById('app').style.display = 'block';
 
+  renderFyQuick();
   renderFilterSummary();
   applyLockState();   // apply locked CSS class and button state — and draws, via renderAll()
   showLoading(false);
