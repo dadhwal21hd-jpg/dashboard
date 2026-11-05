@@ -405,8 +405,17 @@ function isExcludedBuyer(name: unknown): boolean {
  * @param returnRows Goods Return rows (optional — omit or pass [] when the
  *   returns tab isn't configured; every figure stays gross, dashboard renders
  *   exactly as it did before returns existed).
+ * @param opts.skipReturnBrands Goods Returns of these brands are dropped. Used
+ *   while sales come from the DASH sheet, which carries gowns only: suit and
+ *   fabric returns would otherwise be subtracted from sales that were never
+ *   loaded (Nov 2026: 2,778 pcs / ₹91 L, 13 customers net negative —
+ *   user-confirmed to drop them).
  */
-export function process(rowsIn: SheetRow[], returnRowsIn: SheetRow[] = []): DashboardData {
+export function process(
+  rowsIn: SheetRow[],
+  returnRowsIn: SheetRow[] = [],
+  opts: { skipReturnBrands?: Brand[] } = {},
+): DashboardData {
   if (!rowsIn.length) {
     throw new Error("Sheet has no data rows.");
   }
@@ -417,10 +426,41 @@ export function process(rowsIn: SheetRow[], returnRowsIn: SheetRow[] = []): Dash
     : null;
 
   // Drop void/cancellation rows before anything else sees them.
-  const rows = rowsIn.filter((r) => !isExcludedBuyer(r[colMap.cust]));
-  const returnRows = returnsColMap
-    ? returnRowsIn.filter((r) => !isExcludedBuyer(r[returnsColMap.cust]))
+  const skipRet = new Set(opts.skipReturnBrands ?? []);
+  let rows = rowsIn.filter((r) => !isExcludedBuyer(r[colMap.cust]));
+  let returnRows = returnsColMap
+    ? returnRowsIn.filter((r) => !isExcludedBuyer(r[returnsColMap.cust]) &&
+        !(skipRet.size && skipRet.has(extractRow(returnsColMap, r).brand)))
     : returnRowsIn;
+
+  // One buyer, one name: spellings that differ only in capitals or spacing
+  // ("Roop Kala" until Mar 2025, "ROOP KALA" after — user-confirmed Nov 2026)
+  // become the spelling with the most sales lines, in sales and returns alike.
+  const nameKey = (s: unknown) => String(s ?? "").trim().replace(/\s+/g, " ").toUpperCase();
+  const spellings = new Map<string, Map<string, number>>();
+  const countName = (s: unknown, w: number) => {
+    const raw = String(s ?? "").trim();
+    if (!raw) return;
+    const m = spellings.get(nameKey(raw)) ?? new Map<string, number>();
+    m.set(raw, (m.get(raw) ?? 0) + w);
+    spellings.set(nameKey(raw), m);
+  };
+  for (const r of rows) countName(r[colMap.cust], 1);
+  if (returnsColMap) for (const r of returnRows) countName(r[returnsColMap.cust], 0);
+  const canon = new Map<string, string>();
+  for (const m of spellings.values()) {
+    if (m.size < 2) continue;
+    const best = [...m.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    for (const raw of m.keys()) if (raw !== best) canon.set(raw, best);
+  }
+  if (canon.size) {
+    const fold = (r: SheetRow, col: string): SheetRow => {
+      const to = canon.get(String(r[col] ?? "").trim());
+      return to ? { ...r, [col]: to } : r;
+    };
+    rows = rows.map((r) => fold(r, colMap.cust));
+    if (returnsColMap) returnRows = returnRows.map((r) => fold(r, returnsColMap.cust));
+  }
 
   // ── Accumulators ────────────────────────────────────────────────────────
   type SubAcc   = { qty: number; rev: number; custs: Set<string>; styles: Set<string> };

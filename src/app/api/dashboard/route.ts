@@ -96,7 +96,9 @@ export async function GET(req: NextRequest) {
       useOracle ? fetchOracleReturns(force) : fetchReturnsRows(force),
       useOracle && !dash ? fetchOracleHistory(sales.then((s) => s.rows), force) : Promise.resolve([]),
     ]);
-    const data = runProcessor(history.length ? [...history, ...rows] : rows, returnRows);
+    // DASH carries gowns only, so suit/fabric returns would net against nothing.
+    const data = runProcessor(history.length ? [...history, ...rows] : rows, returnRows,
+      dash ? { skipReturnBrands: ["unstitched", "labotanica"] } : {});
 
     // Design thumbnails (optional feature — absent env vars ⇒ empty map).
     // Only the *style numbers that have an image and actually appear in the
