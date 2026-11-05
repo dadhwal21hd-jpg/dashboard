@@ -62,12 +62,19 @@ const MONTH_ABBR: Record<string, number> = {
  * "27-Aug-26" — both separators occur within the same Oracle export; verified
  * against real data, not assumed). Two-digit year: 20xx, per business context
  * (no records predate 2000). Returns null on failure.
+ *
+ * The DASH sheet also spells some months out ("13/October/26", "4/September/21",
+ * "26/August/22" — 5,290 rows, measured Nov 2026), so any leading part of the
+ * full month name is accepted too ("Sept", "October").
  */
+const MONTH_NAMES = ["january", "february", "march", "april", "may", "june",
+  "july", "august", "september", "october", "november", "december"];
 function parseOracleDate(s: string): Date | null {
-  const m = s.match(/^(\d{1,2})[/-]([A-Za-z]{3})[/-](\d{2,4})$/);
+  const m = s.match(/^(\d{1,2})[/-]([A-Za-z]{3,9})[/-](\d{2,4})$/);
   if (!m) return null;
-  const mo = MONTH_ABBR[m[2].toLowerCase()];
-  if (!mo) return null;
+  const word = m[2].toLowerCase();
+  const mo = MONTH_ABBR[word.slice(0, 3)];
+  if (!mo || !MONTH_NAMES[mo - 1].startsWith(word)) return null;
   const day = parseInt(m[1], 10);
   const yRaw = parseInt(m[3], 10);
   const y = m[3].length === 2 ? 2000 + yRaw : yRaw;
