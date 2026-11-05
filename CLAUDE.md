@@ -653,7 +653,11 @@ The customer drill's **Month on month** panel (`renderDrillMonths()`) puts the
 customer's FYs side by side Apr→Mar (default: their latest two; chips to pick,
 All / Last 2, Revenue / Units). Dispatched, before returns; From/To ignored there.
 A month with no data yet in an FY shows "—", not 0, and an unfinished FY is
-compared on the same months only. `npm test` runs `tests/template.test.mjs`, which
+compared on the same months only.
+The same panel (`renderFyMonths()`, one shared renderer; picked years per panel in
+`_fyMM`) also opens for a **sub cut**: inside the customer drill when a sub-cut card
+is clicked (that customer only; a style picker, or click a style number, narrows to
+one style) and on the Sub Cuts tab by clicking a row (all customers; hidden when locked). `npm test` runs `tests/template.test.mjs`, which
 pulls these functions out of the template by name and tests them.
 
 ## Overview chart + Compare mode

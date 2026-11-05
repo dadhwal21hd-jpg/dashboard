@@ -341,6 +341,7 @@ body.locked #ov-cust .bar-name,
 body.locked #ov-sc,
 body.locked #ov-rpu,
 body.locked #sc-tbody td:not(:first-child):not(:nth-child(2)),
+body.locked #sc-months,
 body.locked #sg-container,
 body.locked #cust-tbody td:nth-child(3),
 body.locked #cust-tbody td:nth-child(4),
@@ -1192,6 +1193,7 @@ body.cmp-on .cmp-na{display:block;}
           </select>
         </div>
       </div>
+      <div id="drill-sc-months" style="display:none;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border)"></div>
       <div id="drill-style-table"></div>
     </div>
   </div>
@@ -2353,8 +2355,11 @@ function renderSubcuts() {
     const rpu=s.qty?Math.round(s.revenue/s.qty):0;
     const sh=((s.qty/totalQty)*100).toFixed(1);
     const bx=s.qty>2000?'<span class="badge bg">⭐ STAR</span>':s.qty>500?'<span class="badge br">🔥 HOT</span>':s.customers>20?'<span class="badge bc">📡 WIDE</span>':'<span class="badge bb">◆ NICHE</span>';
-    return`<tr><td>${rn(i)}</td><td><span class="dot" style="background:${scColor(s.name)};margin-right:7px"></span><strong>${s.name}</strong></td><td class="num">${fN(s.qty)}</td><td class="num">${fmt(s.revenue)}</td><td class="num">₹${fN(rpu)}</td><td class="num">${s.customers}</td><td class="num">${s.styles}</td><td>${bx}</td></tr>`;
+    const open = window._sctOpen === s.name;
+    return`<tr data-sc="${esc(s.name)}" onclick="scTabToggle(this.dataset.sc)" style="cursor:pointer${open?';background:#fdf0e8':''}" title="Click for month on month"><td>${rn(i)}</td><td><span style="font-size:9px;color:var(--text3);margin-right:6px">${open?'▼':'▶'}</span><span class="dot" style="background:${scColor(s.name)};margin-right:7px"></span><strong>${s.name}</strong></td><td class="num">${fN(s.qty)}</td><td class="num">${fmt(s.revenue)}</td><td class="num">₹${fN(rpu)}</td><td class="num">${s.customers}</td><td class="num">${s.styles}</td><td>${bx}</td></tr>`
+      + (open ? `<tr><td colspan="8" style="padding:12px 18px;background:#fffdfb;cursor:default"><div id="sc-months"></div></td></tr>` : '');
   }).join('');
+  renderScTabMonths();
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -2935,7 +2940,7 @@ function openDrill(custName, drillData, rowEl) {
   entries.forEach(([sc, data]) => { window._scMap[sc] = data; });
 
   renderDrillBrands();
-  window._dmFys = null;
+  fyMMReset('drill-months');
   renderDrillMonths();
 
   document.getElementById('drill-sc-cards').innerHTML = entries.map(([sc, data])=>{
@@ -3006,7 +3011,7 @@ function openDrillCompare(custName, rowEl) {
 
   // Month on month here too, starting on the financial years being compared.
   window._drillMembers = new Set(members);
-  window._dmFys = [...cmpYears()];
+  fyMMReset('drill-months', cmpYears());
   renderDrillMonths();
 
   document.getElementById('drill-panel').style.display = 'block';
@@ -3050,6 +3055,9 @@ function openStyleDrill(sc, data) {
   document.getElementById('drill-sc-label').textContent = sc;
   document.getElementById('drill-sc-label').style.color = scColor(sc);
   document.getElementById('drill-styles').style.display='block';
+  window._dsmSn = '';
+  fyMMReset('drill-sc-months', fyMMState('drill-months').fys);
+  renderDrillScMonths();
   redrawStyleTable();
 }
 
@@ -3086,7 +3094,7 @@ function redrawStyleTable() {
     const globalBadge = `<span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:${isHit?'#2a8a72':'#9c978e'};font-weight:${isHit?700:400}" title="Total sold to all customers">${fN(gQty)} pcs${isHit?' 🌍':''}</span>`;
     return`<tr>
       <td style="color:var(--text3);font-size:11px;font-family:'IBM Plex Mono',monospace;padding:7px 10px">${i+1}</td>
-      <td style="padding:5px 10px"><div style="display:flex;align-items:center;gap:8px">${designThumb(s.n,'sm')}<span style="font-family:'IBM Plex Mono',monospace;font-weight:700;color:${col}">#${s.n}</span>${BRAND_FILTER==='all'?brandBadge(s.n):''}</div></td>
+      <td style="padding:5px 10px"><div style="display:flex;align-items:center;gap:8px">${designThumb(s.n,'sm')}<span data-sn="${esc(s.n)}" onclick="drillScMonthsStyle(this.dataset.sn)" title="Month on month for this style" style="font-family:'IBM Plex Mono',monospace;font-weight:700;color:${col};cursor:pointer;text-decoration:underline dotted">#${s.n}</span>${BRAND_FILTER==='all'?brandBadge(s.n):''}</div></td>
       <td style="padding:7px 10px"><div style="display:flex;align-items:center;gap:8px">
         <div style="width:80px;background:#f0ede8;height:6px;border-radius:3px"><div style="width:${pct}%;height:100%;background:${col};border-radius:3px;opacity:.75"></div></div>
         <strong style="font-family:'IBM Plex Mono',monospace;color:${col}">${s.qty} pcs</strong>
@@ -3146,13 +3154,13 @@ function renderDrillBrands() {
   el.innerHTML = parts.length ? `<span style="font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-right:6px">By brand</span>${parts.join('')}` : '';
 }
 
-/** One customer's (or cluster's) dispatches by financial year and month:
+/** Dispatches by financial year and month for the rows `keep` accepts:
  *  { "FY25-26": { 4: {q, rev}, ... } }. Gross — dispatch activity, same rule
  *  as the monthly charts; returns are not dispatch months. */
-function custFyMonthly(rows, members) {
+function fyMonthly(rows, keep) {
   const acc = {};
   for (const r of rows) {
-    if (!members.has(r.c)) continue;
+    if (!keep(r)) continue;
     const ds = rowDateStr(r); if (!ds) continue;
     const fy = fyKey(ds), m = +ds.slice(5,7);
     const y = acc[fy] || (acc[fy] = {});
@@ -3160,6 +3168,16 @@ function custFyMonthly(rows, members) {
     a.q += r.q; a.rev += r.q * r.p;
   }
   return acc;
+}
+
+/** One customer's (or cluster's) months. */
+function custFyMonthly(rows, members) { return fyMonthly(rows, r => members.has(r.c)); }
+
+/** Style numbers in these rows, most units first: [{sn, q}]. */
+function scStyleList(rows) {
+  const q = {};
+  for (const r of rows) if (r.sn) q[r.sn] = (q[r.sn] || 0) + r.q;
+  return Object.entries(q).map(([sn, n]) => ({ sn, q: n })).sort((a, b) => b.q - a.q);
 }
 
 /** Table rows Apr→Mar for the chosen FYs. A value is null (not 0) for a month
@@ -3188,34 +3206,40 @@ function fyMonthKey(fy, m) {
 /** Starting pick: the customer's two most recent financial years. */
 function drillFyDefault(fys) { return fys.slice(-2); }
 
-function drillFyToggle(fy) {
-  const sel = window._dmFys || [];
+// Every month-on-month panel (customer, its sub cut, Sub Cuts tab) keeps its
+// own picked years in _fyMM[panel id]; Revenue/Units is shared by all of them.
+window._fyMM = {};
+function fyMMState(id) { return window._fyMM[id] || (window._fyMM[id] = { fys:null, avail:[], redraw:null }); }
+function fyMMReset(id, fys) { fyMMState(id).fys = fys ? [...fys] : null; }
+function fyMMToggle(id, fy) {
+  const st = fyMMState(id), sel = st.fys || [];
   const i = sel.indexOf(fy);
   if (i >= 0) { if (sel.length > 1) sel.splice(i, 1); } else sel.push(fy);
-  window._dmFys = sel.sort();
-  renderDrillMonths();
+  st.fys = sel.sort();
+  st.redraw && st.redraw();
 }
-function drillFyPreset(which) {
-  window._dmFys = which === 'all' ? [...(window._dmAvail || [])] : drillFyDefault(window._dmAvail || []);
-  renderDrillMonths();
+function fyMMPreset(id, which) {
+  const st = fyMMState(id);
+  st.fys = which === 'all' ? [...st.avail] : drillFyDefault(st.avail);
+  st.redraw && st.redraw();
 }
-function drillFyMetric(m) { window._dmMetric = m; renderDrillMonths(); }
+function fyMMMetric(id, m) { window._dmMetric = m; const st = fyMMState(id); st.redraw && st.redraw(); }
 
-/** Month on month for the customer being drilled, financial years side by
- *  side (Apr→Mar). The years are picked here, so the From/To dates are
- *  ignored; brand / qty / MRP filters still apply. Names are never shown, so
- *  the lock needs nothing extra. */
-function renderDrillMonths() {
-  const el = document.getElementById('drill-months');
+/** Draws a month-on-month table into element `id`: financial years side by
+ *  side (Apr→Mar), change vs the year before, same-months-only line while the
+ *  newest year is unfinished. `opt.title` heads it, `opt.extra` is HTML put
+ *  under the year chips (e.g. a style picker), `opt.redraw` re-renders. */
+function renderFyMonths(id, acc, opt) {
+  const el = document.getElementById(id);
   if (!el) return;
-  const members = window._drillMembers || new Set();
-  const acc = custFyMonthly(D.raw.filter(passesNonDateFilter), members);
+  const st = fyMMState(id);
+  st.redraw = opt.redraw;
   const avail = Object.keys(acc).sort();
-  window._dmAvail = avail;
+  st.avail = avail;
   if (!avail.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
-  let fys = (window._dmFys || []).filter(fy => avail.includes(fy));
+  let fys = (st.fys || []).filter(fy => avail.includes(fy));
   if (!fys.length) fys = drillFyDefault(avail);
-  window._dmFys = fys;
+  st.fys = fys;
   const metric = window._dmMetric === 'q' ? 'q' : 'rev';
   const nowKey = new Date().toISOString().slice(0,7);
   const show = v => v === null ? '<span style="color:var(--text3)">—</span>' : metric === 'q' ? fN(Math.round(v)) : fmt(Math.round(v));
@@ -3245,25 +3269,85 @@ function renderDrillMonths() {
   const ytdLine = `${n > 1 && newestPartial && have.length ? `<div style="padding:8px 0 0;font-size:11px;color:var(--text2)">
       Same months only (${monthsLabel(have)}): ${esc(fys[n-2])} ${show(T.sameMonthsPrev)} → ${esc(newest)} ${show(T.totals[n-1])} ${pctPill(ytdDelta)}
       <span style="color:var(--text3)">· ${esc(newest)} isn't over yet, so its full-year total isn't compared</span></div>` : ''}`;
-  const chip = fy => { const on = fys.includes(fy); return `<span class="cmp-chip${on ? ' on' : ''}" style="${on ? `background:${cmpYearColor(fy)}` : ''}" onclick="drillFyToggle('${fy}')">${fy}</span>`; };
+  const chip = fy => { const on = fys.includes(fy); return `<span class="cmp-chip${on ? ' on' : ''}" style="${on ? `background:${cmpYearColor(fy)}` : ''}" onclick="fyMMToggle('${id}','${fy}')">${fy}</span>`; };
   el.style.display = 'block';
   el.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);font-family:'IBM Plex Mono',monospace">Month on month · financial year (Apr–Mar)</div>
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);font-family:'IBM Plex Mono',monospace">${opt.title}</div>
       <div style="display:flex;gap:4px">
-        <span class="cmp-chip mo${metric === 'rev' ? ' on' : ''}" onclick="drillFyMetric('rev')">Revenue</span>
-        <span class="cmp-chip mo${metric === 'q' ? ' on' : ''}" onclick="drillFyMetric('q')">Units</span>
+        <span class="cmp-chip mo${metric === 'rev' ? ' on' : ''}" onclick="fyMMMetric('${id}','rev')">Revenue</span>
+        <span class="cmp-chip mo${metric === 'q' ? ' on' : ''}" onclick="fyMMMetric('${id}','q')">Units</span>
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-bottom:8px">
       ${avail.map(chip).join('')}
-      ${avail.length > 2 ? `<span class="cmp-chip link" onclick="drillFyPreset('last2')">Last 2</span><span class="cmp-chip link" onclick="drillFyPreset('all')">All</span>` : ''}
+      ${avail.length > 2 ? `<span class="cmp-chip link" onclick="fyMMPreset('${id}','last2')">Last 2</span><span class="cmp-chip link" onclick="fyMMPreset('${id}','all')">All</span>` : ''}
     </div>
+    ${opt.extra || ''}
     <div class="tbl-scroll"><table style="width:100%;border-collapse:collapse"><thead><tr>
       <th style="${th};text-align:left">Month</th>
       ${fys.map((fy, i) => `<th style="${th};color:${cols[i]}">${fy}<div style="font-size:8px;letter-spacing:0;text-transform:none;color:var(--text3);font-weight:400">Apr ${fyRange(fy)[0].slice(2,4)} – Mar ${fyRange(fy)[1].slice(2,4)}</div></th>`).join('')}
       ${n > 1 ? `<th style="${th}">${esc(newest)} vs ${esc(fys[n-2])}</th>` : ''}
     </tr></thead><tbody>${body}${foot}</tbody></table></div>${ytdLine}
     <div style="font-size:10px;color:var(--text3);margin-top:6px">Dispatched, before Goods Returns · From/To dates are ignored here (pick the years above); brand, qty and MRP filters apply · Dec under FY25-26 is Dec 2025, under FY26-27 it is Dec 2026</div>`;
+}
+
+/** Style picker for a sub cut's month-on-month: whole sub cut, or one style. */
+function fyStylePicker(styles, cur, onchange) {
+  if (styles.length < 2) return '';
+  return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+      <span class="filter-label">Show:</span>
+      <select onchange="${onchange}" style="padding:4px 8px;font-size:12px;max-width:100%">
+        <option value=""${cur ? '' : ' selected'}>Whole sub cut (${styles.length} styles)</option>
+        ${styles.map(s => `<option value="${esc(s.sn)}"${s.sn === cur ? ' selected' : ''}>#${esc(s.sn)} · ${fN(s.q)} pcs</option>`).join('')}
+      </select>
+    </div>`;
+}
+
+/** Month on month for the customer being drilled. The years are picked here,
+ *  so the From/To dates are ignored; brand / qty / MRP filters still apply.
+ *  Names are never shown, so the lock needs nothing extra. */
+function renderDrillMonths() {
+  const members = window._drillMembers || new Set();
+  renderFyMonths('drill-months', custFyMonthly(D.raw.filter(passesNonDateFilter), members),
+    { title: 'Month on month · financial year (Apr–Mar)', redraw: renderDrillMonths });
+}
+
+/** Month on month for the sub cut opened inside the customer drill — this
+ *  customer only — or one of its styles (picker, or click a style number). */
+function renderDrillScMonths() {
+  const members = window._drillMembers || new Set(), sc = _curSC;
+  const rows = D.raw.filter(r => r.sc === sc && members.has(r.c) && passesNonDateFilter(r));
+  const styles = scStyleList(rows);
+  let sn = window._dsmSn || '';
+  if (sn && !styles.some(s => s.sn === sn)) sn = window._dsmSn = '';
+  renderFyMonths('drill-sc-months', fyMonthly(rows, r => !sn || r.sn === sn), {
+    title: `Month on month · <span style="color:${scColor(sc)}">${esc(sc)}</span>${sn ? ` · #${esc(sn)}` : ''} · this customer`,
+    extra: fyStylePicker(styles, sn, "window._dsmSn=this.value;renderDrillScMonths()"),
+    redraw: renderDrillScMonths });
+}
+function drillScMonthsStyle(sn) {
+  window._dsmSn = sn; renderDrillScMonths();
+  document.getElementById('drill-sc-months')?.scrollIntoView({ block:'nearest', behavior:'smooth' });
+}
+
+/** Sub Cuts tab: click a row to open its month on month (all customers)
+ *  underneath; click again to close. Survives a re-render of the table. */
+function scTabToggle(sc) {
+  window._sctOpen = window._sctOpen === sc ? null : sc;
+  window._sctSn = '';
+  renderSubcuts();
+}
+function renderScTabMonths() {
+  const sc = window._sctOpen;
+  if (!sc) return;
+  const rows = D.raw.filter(r => r.sc === sc && passesNonDateFilter(r));
+  const styles = scStyleList(rows);
+  let sn = window._sctSn || '';
+  if (sn && !styles.some(s => s.sn === sn)) sn = window._sctSn = '';
+  renderFyMonths('sc-months', fyMonthly(rows, r => !sn || r.sn === sn), {
+    title: `Month on month · <span style="color:${scColor(sc)}">${esc(sc)}</span>${sn ? ` · #${esc(sn)}` : ''} · all customers`,
+    extra: fyStylePicker(styles, sn, "window._sctSn=this.value;renderScTabMonths()"),
+    redraw: renderScTabMonths });
 }
 
 /** Returned-units cell for the customer drill: "—" when nothing came back. */

@@ -87,7 +87,7 @@ const ROWS = [
 ];
 
 test("custFyMonthly buckets one customer's dispatches by FY and month", () => {
-  const { custFyMonthly } = load(["custFyMonthly", "rowDateStr", "fyKey"]);
+  const { custFyMonthly } = load(["custFyMonthly", "fyMonthly", "rowDateStr", "fyKey"]);
   const acc = custFyMonthly(ROWS, new Set(["SHAM"]));
   assert.deepEqual(Object.keys(acc).sort(), ["FY25-26", "FY26-27"]);
   assert.deepEqual({ ...acc["FY25-26"][4] }, { q: 15, rev: 1500 });
@@ -97,13 +97,13 @@ test("custFyMonthly buckets one customer's dispatches by FY and month", () => {
 });
 
 test("custFyMonthly adds up every member of a cluster", () => {
-  const { custFyMonthly } = load(["custFyMonthly", "rowDateStr", "fyKey"]);
+  const { custFyMonthly } = load(["custFyMonthly", "fyMonthly", "rowDateStr", "fyKey"]);
   const acc = custFyMonthly(ROWS, new Set(["SHAM", "OTHER"]));
   assert.deepEqual({ ...acc["FY26-27"][4] }, { q: 27, rev: 2070 });
 });
 
 test("fyCompareRows lines months up Apr→Mar with totals and change", () => {
-  const { custFyMonthly, fyCompareRows } = load(["custFyMonthly", "fyCompareRows", "rowDateStr", "fyKey"], ["FY_MONTHS"]);
+  const { custFyMonthly, fyCompareRows } = load(["custFyMonthly", "fyMonthly", "fyCompareRows", "rowDateStr", "fyKey"], ["FY_MONTHS"]);
   const acc = custFyMonthly(ROWS, new Set(["SHAM"]));
   // Coverage: FY26-27 only has data up to April so far.
   const cov = { "FY25-26": new Set([4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3]), "FY26-27": new Set([4]) };
@@ -124,7 +124,7 @@ test("fyCompareRows lines months up Apr→Mar with totals and change", () => {
 });
 
 test("fyCompareRows can rank by units", () => {
-  const { custFyMonthly, fyCompareRows } = load(["custFyMonthly", "fyCompareRows", "rowDateStr", "fyKey"], ["FY_MONTHS"]);
+  const { custFyMonthly, fyCompareRows } = load(["custFyMonthly", "fyMonthly", "fyCompareRows", "rowDateStr", "fyKey"], ["FY_MONTHS"]);
   const acc = custFyMonthly(ROWS, new Set(["SHAM"]));
   const cov = { "FY25-26": new Set([4, 3]), "FY26-27": new Set([4]) };
   const T = fyCompareRows(acc, ["FY25-26", "FY26-27"], cov, "q");
@@ -133,11 +133,36 @@ test("fyCompareRows can rank by units", () => {
 });
 
 test("fyCompareRows with one FY has no change column", () => {
-  const { custFyMonthly, fyCompareRows } = load(["custFyMonthly", "fyCompareRows", "rowDateStr", "fyKey"], ["FY_MONTHS"]);
+  const { custFyMonthly, fyCompareRows } = load(["custFyMonthly", "fyMonthly", "fyCompareRows", "rowDateStr", "fyKey"], ["FY_MONTHS"]);
   const acc = custFyMonthly(ROWS, new Set(["SHAM"]));
   const T = fyCompareRows(acc, ["FY26-27"], { "FY26-27": new Set([4]) }, "rev");
   assert.equal(T.rows[0].delta, null);
   assert.equal(T.sameMonthsPrev, null);
+});
+
+// ── Sub cut / style month-on-month ───────────────────────────────────────
+
+const SC_ROWS = [
+  { c: "SHAM", sc: "SGONC", sn: "84752", dt: "2025-05-02", q: 4, p: 1000 },
+  { c: "SHAM", sc: "SGONC", sn: "84752", dt: "2026-05-09", q: 6, p: 1000 },
+  { c: "SHAM", sc: "SGONC", sn: "90001", dt: "2026-05-11", q: 1, p: 500 },
+  { c: "SHAM", sc: "OTHER", sn: "11111", dt: "2026-05-11", q: 9, p: 10 },
+  { c: "RAJ", sc: "SGONC", sn: "84752", dt: "2026-05-20", q: 3, p: 1000 },
+];
+
+test("fyMonthly keeps only the rows asked for", () => {
+  const { fyMonthly } = load(["fyMonthly", "rowDateStr", "fyKey"]);
+  const acc = fyMonthly(SC_ROWS, r => r.sc === "SGONC");
+  assert.deepEqual({ ...acc["FY25-26"][5] }, { q: 4, rev: 4000 });
+  assert.deepEqual({ ...acc["FY26-27"][5] }, { q: 10, rev: 9500 });
+  const one = fyMonthly(SC_ROWS, r => r.sc === "SGONC" && r.c === "SHAM" && r.sn === "84752");
+  assert.deepEqual({ ...one["FY26-27"][5] }, { q: 6, rev: 6000 });
+});
+
+test("scStyleList ranks a sub cut's styles by units", () => {
+  const { scStyleList } = load(["scStyleList"]);
+  const list = scStyleList(SC_ROWS.filter(r => r.sc === "SGONC"));
+  assert.deepEqual(JSON.parse(JSON.stringify(list.map(s => [s.sn, s.q]))), [["84752", 13], ["90001", 1]]);
 });
 
 test("drillFyDefault picks the customer's latest two FYs", () => {
