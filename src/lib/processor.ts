@@ -333,6 +333,9 @@ interface ParsedRow {
 
 /** One row → the six fields every aggregation below needs, using whichever
  *  column shape detectColumns() found (dedicated columns or Design-derived). */
+/** Sub cuts that are the same cut under another code (user-confirmed Nov 2026). */
+const SUBCUT_SAME: Record<string, string> = { AKE: "AK", SGO: "SG", LCO: "LC" };
+
 function extractRow(colMap: ColumnMap, r: SheetRow): ParsedRow {
   const qty   = parseQty(r[colMap.qty]);
   const price = parsePrice(r[colMap.price]);
@@ -349,6 +352,8 @@ function extractRow(colMap: ColumnMap, r: SheetRow): ParsedRow {
     sn = parsed?.style || "Unknown";
     sc = parsed?.subcut || "Unknown";
   }
+
+  sc = SUBCUT_SAME[sc.toUpperCase()] ?? sc;
 
   const itemDesc = colMap.itemDesc ? r[colMap.itemDesc] : undefined;
   const design = colMap.design ? String(r[colMap.design] ?? "").trim() : "";

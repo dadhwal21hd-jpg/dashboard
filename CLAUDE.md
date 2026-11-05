@@ -310,6 +310,7 @@ Rules that came with the data (from the WIP_HEART side):
   Fashion"), which would bury internal dispatches in a customer's revenue.
 - **While sales come from DASH (gowns only), suit and fabric Goods Returns are dropped** (`skipReturnBrands` in `process()`): netted against sales that were never loaded they made 13 customers negative (2,778 pcs / ₹91 L, user-confirmed Nov 2026). Restored automatically with `SALES_SOURCE=supabase`.
 - **Buyer names differing only in capitals/spacing are one buyer** (`process()` folds them to the spelling with most sales lines, sales and returns alike): "Roop Kala" until Mar 2025, "ROOP KALA" after — user-confirmed Nov 2026.
+- **Sub cuts AKE = AK, SGO = SG, LCO = LC** (`SUBCUT_SAME` in processor.ts, user-confirmed Nov 2026). Longer variants (SGOB, AKEBO, LCOV, …) are NOT merged.
 - **Bill dates may spell the month out** ("13/October/26"); `parseOracleDate()` accepts that. Before Nov 2026 it didn't and 5,340 pcs / ₹7.02 Cr sat in totals but in no month.
 - **SALES_SOURCE (Oct 2026): default `dash` — sales come from the whole DASH tab, Supabase ledger not read (owner request, until he says switch). `SALES_SOURCE=supabase` restores ledger + DASH-before-April. Returns still from Supabase.**
 - The ledger starts **1 Apr 2026**. Everything before its first day comes from the
