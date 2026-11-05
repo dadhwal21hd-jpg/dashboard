@@ -30,6 +30,10 @@ export const CLUSTERS: ClusterDef[] = [
       // spelling variant, not a guess: "FRONTIER" is distinctive enough in
       // this customer list that it isn't a coincidental match).
       "FRONTIER CLOTTH HOUSE PVT.LTD",
+      // How the DASH sheet spells the two above (Nov 2026; GNE added on the
+      // user's request — the "GNE Exports Pvt. Ltd." line never matched it).
+      "GNE EXPORTS PVT.LTD.",
+      "FRONTIER CLOTTH HOUSE PVT.LTD (Front Phg)",
     ],
   },
   {
