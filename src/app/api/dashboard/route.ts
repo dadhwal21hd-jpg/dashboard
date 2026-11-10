@@ -1,31 +1,3 @@
-/**
- * GET /api/dashboard
- *
- * Protected endpoint. Fetches sales + Goods Return rows from Supabase
- * (oracle_bill_lines / oracle_gr_report, 5-min cache; the Google Sheet tabs
- * are only the fallback when PROJECT_URL / ANON_KEY are not set),
- * runs the analytics processor, and returns the dashboard HTML with the
- * DATA constant injected at the /*__DATA__*\/ placeholder.
- *
- * Query params:
- *   ?refresh=1        forces a fresh fetch of orders/returns/design-map,
- *                     bypassing their caches.
- *   ?refreshImages=1  ALSO force-clears the cached design *photos*
- *                     (src/lib/drive.ts) — deliberately separate from
- *                     ?refresh=1: those photos are cached indefinitely (see
- *                     drive.ts's CACHE_FOREVER) because a design photo
- *                     essentially never changes in place, so a routine data
- *                     refresh must not silently nuke that cache and force
- *                     everyone to re-download every photo. Use this one only
- *                     when a specific photo actually was replaced on Drive
- *                     and needs to show up sooner than "next full sync
- *                     picks up the new file ID" would otherwise handle.
- *
- * Response: text/html (the dashboard, ready to render).
- *
- * Errors return application/json with { error: string } so the frontend
- * can show a clean message instead of a broken dashboard.
- */
 import { NextRequest, NextResponse } from "next/server";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -34,26 +6,18 @@ import { brotliCompress, gzip, constants as zlibConstants } from "node:zlib";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { fetchSheetRows, fetchReturnsRows } from "@/lib/sheets";
-import { fetchOracleSales, fetchOracleReturns, fetchOracleHistory, fetchDashSales, useDashSales, oracleConfigured } from "@/lib/oracle";
 import { process as runProcessor } from "@/lib/processor";
 import { fetchDesignMap, designsConfigured } from "@/lib/designs";
 import { getStableDesignToken } from "@/lib/signing";
 import { clearDriveCache } from "@/lib/drive";
 import { fetchStockMap } from "@/lib/stock";
 
-export const dynamic = "force-dynamic"; // never statically cache this route
-export const maxDuration = 60; // a cold start reads ~80k history rows from Sheets (~15 s)
+export const dynamic = "force-dynamic";
+export const maxDuration = 60; 
 
 const brotli = promisify(brotliCompress);
 const gz = promisify(gzip);
 
-/**
- * The page is ~3.6 MB (DATA carries every order row) but compresses to
- * ~265 KB. Next compresses its pages, not route-handler responses — measured
- * on `next start`: 3.67 MB on the wire, no Content-Encoding — so it's done
- * here rather than left to whatever the host does. ~18 ms of CPU, off the
- * event loop; on a phone on mobile data it saves seconds per load.
- */
 async function encodeFor(req: NextRequest, body: string): Promise<{ data: Uint8Array<ArrayBuffer> | string; encoding?: string }> {
   const accept = req.headers.get("accept-encoding") ?? "";
   const buf = Buffer.from(body);
@@ -71,7 +35,6 @@ async function encodeFor(req: NextRequest, body: string): Promise<{ data: Uint8A
 }
 
 export async function GET(req: NextRequest) {
-  // ── Auth gate ────────────────────────────────────────────────────────────
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -83,36 +46,15 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // ── Fetch + process ───────────────────────────────────────────────────
-    // Supabase is the system of record now. If it is configured but fails, that
-    // is an error to show — NOT a silent drop back to the (stale) sheet.
-    const useOracle = oracleConfigured();
-    // The ledger starts 1 Apr 2026; DASH supplies everything before it. Its read
-    // is the slow one, so it runs alongside the ledger's, not after.
-    const dash = useOracle && useDashSales(); // owner switch: sales from the DASH tab only
-    const sales = dash ? fetchDashSales(force) : useOracle ? fetchOracleSales(force) : fetchSheetRows(force);
-    const [{ rows, fetchedAt, fromCache }, { rows: returnRows }, history] = await Promise.all([
+    // Force the app to use Google Sheets instead of Supabase
+    const sales = fetchSheetRows(force);
+    const [{ rows, fetchedAt, fromCache }, { rows: returnRows }] = await Promise.all([
       sales,
-      useOracle ? fetchOracleReturns(force) : fetchReturnsRows(force),
-      useOracle && !dash ? fetchOracleHistory(sales.then((s) => s.rows), force) : Promise.resolve([]),
+      fetchReturnsRows(force) // ALWAYS uses the Google Sheet for returns now
     ]);
-    // DASH carries gowns only, so suit/fabric returns would net against nothing.
-    const data = runProcessor(history.length ? [...history, ...rows] : rows, returnRows,
-      dash ? { skipReturnBrands: ["unstitched", "labotanica"] } : {});
 
-    // Design thumbnails (optional feature — absent env vars ⇒ empty map).
-    // Only the *style numbers that have an image and actually appear in the
-    // orders* are sent: the client needs presence, not Drive IDs (the image
-    // route resolves those server-side), and the catalogue is much larger
-    // than the order book.
-    // Stock on hand (optional, R-Studio only — see src/lib/stock.ts). Only
-    // styles that actually appear in the orders are sent: the stock table is
-    // bigger than what's been sold, and the dashboard only ever shows stock
-    // next to a style it is already listing.
-    //
-    // Fetched *alongside* the design map, not after it: they're independent
-    // reads of two different services, and a cold instance pays both round
-    // trips in full, so running them in series showed up as a slower page.
+    const data = runProcessor(rows, returnRows, {});
+
     const [designMap, stockMap] = await Promise.all([
       fetchDesignMap(force),
       fetchStockMap(force),
@@ -124,12 +66,7 @@ export async function GET(req: NextRequest) {
       if (ordered.has(sn)) stock[sn] = qty;
     }
 
-    // The template lives in a blob-URL iframe (opaque origin), so it can't use
-    // relative URLs or send our cookie. Give it an absolute base + a signed
-    // token instead. See src/lib/signing.ts.
     const origin = req.nextUrl.origin;
-
-    // ── Load template and inject ──────────────────────────────────────────
     const templatePath = path.join(process.cwd(), "public", "dashboard_template.html");
     const template = await readFile(templatePath, "utf-8");
 
@@ -138,17 +75,11 @@ export async function GET(req: NextRequest) {
       _fetched_at: new Date(fetchedAt).toISOString(),
       _from_cache: fromCache,
       _user: session.user.email,
-      // Lock codes — injected into client-side DATA for the sci-fi lock UI.
-      // NOTE: This is a VISUAL lock only. The data itself is on the client.
-      // A technical user opening dev tools could read these codes.
       _master_code:   process.env.MASTER_UNLOCK_CODE   || "",
       _customer_code: process.env.CUSTOMER_UNLOCK_CODE || "",
-      // Design thumbnails: which styles have an image, plus how to reach the
-      // image route from inside the opaque-origin iframe.
       _designs:       designStyles,
       _design_base:   designsConfigured() ? `${origin}/api/design` : "",
       _design_token:  designsConfigured() ? await getStableDesignToken(session.user.email) : "",
-      // Units available per style (R-Studio only; {} when not configured).
       _stock:         stock,
     };
 

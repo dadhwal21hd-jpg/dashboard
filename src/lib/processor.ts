@@ -4,10 +4,6 @@
  * Core analytics output matches the original Python script byte-for-byte.
  * Adds clustered_customers, clustered_drill, cluster_membership for the
  * Individual/Clustered toggle in the Customers tab.
- *
- * Also reads the Oracle billing export (source of truth as of the 2026
- * cutover) and, optionally, its Goods Return tab — see parseDesign() and
- * the "returns" parameter below for what's specific to that source.
  */
 import type {
   DashboardData,
@@ -24,14 +20,12 @@ import { CLUSTERS, buildClusterLookup, clusterFor } from "./clusters";
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
 
-/** Extract the first integer/float from a price string. */
 export function parsePrice(p: unknown): number {
   const s = String(p ?? "").trim().replace(/,/g, "");
   const m = s.match(/\d+(\.\d+)?/);
   return m ? parseFloat(m[0]) : 0;
 }
 
-/** Extract integer quantity — returns 0 for non-numeric / non-positive values. */
 export function parseQty(q: unknown): number {
   const s = String(q ?? "").trim().replace(/,/g, "");
   if (!s) return 0;
@@ -41,14 +35,11 @@ export function parseQty(q: unknown): number {
   return i > 0 ? i : 0;
 }
 
-/** Python-compatible round() — banker's rounding (round half to even).
- *  JS Math.round rounds half away from zero (or up). Python rounds half to even. */
 export function bankRound(n: number): number {
   const floor = Math.floor(n);
   const diff = n - floor;
   if (diff < 0.5) return floor;
   if (diff > 0.5) return floor + 1;
-  // Exactly .5 → round to even
   return floor % 2 === 0 ? floor : floor + 1;
 }
 
@@ -57,18 +48,9 @@ const MONTH_ABBR: Record<string, number> = {
   jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
 };
 
-/**
- * Parse Oracle's "DD/Mon/YY" or "DD-Mon-YY" date format (e.g. "12/Aug/26",
- * "27-Aug-26" — both separators occur within the same Oracle export; verified
- * against real data, not assumed). Two-digit year: 20xx, per business context
- * (no records predate 2000). Returns null on failure.
- *
- * The DASH sheet also spells some months out ("13/October/26", "4/September/21",
- * "26/August/22" — 5,290 rows, measured Nov 2026), so any leading part of the
- * full month name is accepted too ("Sept", "October").
- */
 const MONTH_NAMES = ["january", "february", "march", "april", "may", "june",
   "july", "august", "september", "october", "november", "december"];
+
 function parseOracleDate(s: string): Date | null {
   const m = s.match(/^(\d{1,2})[/-]([A-Za-z]{3,9})[/-](\d{2,4})$/);
   if (!m) return null;
@@ -86,44 +68,34 @@ function parseOracleDate(s: string): Date | null {
   return null;
 }
 
-/** Parse dd/mm/yyyy → Date. Returns null on failure. Mirrors Python's parse_date.
- *  Tries Oracle's "DD-Mon-YY" / "DD/Mon/YY" format first (cheap regex miss for
- *  the numeric formats below), then falls back to the original numeric ones —
- *  kept for compatibility with any non-Oracle sheet this might ever read. */
 export function parseDate(d: unknown): Date | null {
   let s = String(d ?? "").trim();
   if (!s) return null;
 
-  // Aggressively strip time portions from Supabase/SQL timestamps
-  // e.g., "2024-04-15T00:00:00Z" -> "2024-04-15"
-  // e.g., "15-Apr-24 14:30:00" -> "15-Apr-24"
+  // 1. Handle Google Sheets Serial Dates (e.g. 45397 for April 15, 2024)
+  if (/^\d{5}(\.\d+)?$/.test(s)) {
+    const serial = parseFloat(s);
+    return new Date(Date.UTC(1899, 11, 30 + Math.floor(serial)));
+  }
+
+  // 2. Strip timestamps
   s = s.replace(/[T ]\d{1,2}:\d{2}.*$/, '').trim();
 
   const oracle = parseOracleDate(s);
   if (oracle) return oracle;
 
-  // Try each format in order, same as Python
+  // 3. Regex Patterns
   const patterns: Array<[RegExp, (m: RegExpMatchArray) => [number, number, number]]> = [
-    // dd/mm/yyyy or dd/mm/yy
-    [/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/, (m) => {
+    [/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2}|\d{4})$/, (m) => {
       let y = parseInt(m[3], 10);
       if (y < 100) y += 2000;
-      return [y, parseInt(m[2], 10), parseInt(m[1], 10)];
+      const p1 = parseInt(m[1], 10);
+      const p2 = parseInt(m[2], 10);
+      // If middle number > 12, it MUST be mm/dd/yyyy
+      if (p2 > 12) return [y, p1, p2];
+      return [y, p2, p1]; // Default to dd/mm/yyyy
     }],
-    // dd-mm-yyyy or dd-mm-yy
-    [/^(\d{1,2})-(\d{1,2})-(\d{2}|\d{4})$/, (m) => {
-      let y = parseInt(m[3], 10);
-      if (y < 100) y += 2000;
-      return [y, parseInt(m[2], 10), parseInt(m[1], 10)];
-    }],
-    // yyyy-mm-dd
-    [/^(\d{4})-(\d{1,2})-(\d{1,2})$/, (m) => [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)]],
-    // mm/dd/yyyy or mm/dd/yy
-    [/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/, (m) => {
-      let y = parseInt(m[3], 10);
-      if (y < 100) y += 2000;
-      return [y, parseInt(m[1], 10), parseInt(m[2], 10)];
-    }],
+    [/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/, (m) => [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)]]
   ];
 
   for (const [re, build] of patterns) {
@@ -138,16 +110,14 @@ export function parseDate(d: unknown): Date | null {
     }
   }
 
-  // Final fallback for native JS parse if everything above fails
+  // 4. Native JS fallback
   const fallback = new Date(s);
   if (!isNaN(fallback.getTime())) {
       return new Date(Date.UTC(fallback.getFullYear(), fallback.getMonth(), fallback.getDate()));
   }
-
   return null;
 }
 
-/** Format yyyy-mm-dd from a Date (UTC). */
 function isoDate(d: Date): string {
   const y = d.getUTCFullYear();
   const m = String(d.getUTCMonth() + 1).padStart(2, "0");
@@ -155,17 +125,6 @@ function isoDate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-/**
- * Oracle packs sub-cut style + style number into one "Design" cell, e.g.
- * "G-SGONC.84752" → subcut "SGONC", style "84752" (confirmed against real
- * data with the user, Sep 2026). The leading "<letters>-" is a constant
- * marker, not part of either dimension, so it's discarded.
- *
- * Best-effort: a cell with no "." (seen in some historical rows outside this
- * cutover's scope) yields the whole remainder as the style with no subcut,
- * rather than throwing — one unparseable design must not take down the
- * import, same philosophy as everywhere else bad sheet data is handled.
- */
 export function parseDesign(s: unknown): { subcut: string; style: string } | null {
   const raw = String(s ?? "").trim();
   if (!raw) return null;
@@ -197,25 +156,13 @@ interface ColumnMap {
   cust: string;
   price: string;
   date: string;
-  /** Set when the sheet has a dedicated style-number column (old-sheet shape). */
   style?: string;
-  /** Set alongside `style` when the sheet also has a dedicated subcut column. */
   subcut?: string;
-  /** Set when style+subcut instead come from a compound "Design" column
-   *  (Oracle's shape) — mutually exclusive with `style` in practice. */
   design?: string;
-  /** Oracle's "Item Description" (e.g. "GOWN", "KK GOWN", "SAMPLE",
-   *  "DUPATTA") — optional; absent on the old-sheet shape. Used only to tell
-   *  Gown-family rows (which the brand split applies to) from everything
-   *  else, not surfaced verbatim to the client. */
   itemDesc?: string;
-  /** Oracle's "Remarks" — carries the fabric tag ("FABRIC CRAPE …") that
-   *  separates Labotanica from the suits. Sales only; absent on returns. */
   remarks?: string;
 }
 
-/** Case-insensitive column detection, tolerant of either shape: dedicated
- *  style/subcut columns, or a compound "Design" column to derive both from. */
 function detectColumns(headers: string[], sourceLabel: string): ColumnMap {
   const headersLower: Record<string, string> = {};
   for (const h of headers) headersLower[h.toLowerCase().trim()] = h;
@@ -240,47 +187,15 @@ function detectColumns(headers: string[], sourceLabel: string): ColumnMap {
 
   if (!colMap.style && !colMap.design) {
     throw new Error(
-      `${sourceLabel}: cannot find a style-number column, or a "Design" column to derive one from. ` +
-      `Found columns: ${headers.join(", ")}`,
+      `${sourceLabel}: cannot find a style-number column, or a "Design" column to derive one from. Found columns: ${headers.join(", ")}`,
     );
   }
 
   return colMap as ColumnMap;
 }
 
-/**
- * kk · rstudio  — gowns (Item Description)
- * labotanica    — fabric
- * unstitched    — suits: SAAR (4-digit designs) and RAAS ("E-" designs),
- *                 deliberately kept together for now — see classifyBrand
- * other         — a line that matches nothing above (e.g. DUPATTA); shown as
- *                 "Unclassified" so it is visible rather than guessed at
- * unknown       — blank Item Description
- */
 export type Brand = "kk" | "rstudio" | "labotanica" | "unstitched" | "other" | "unknown";
 
-/**
- * Authoritative per-row brand classification. Item Description is GROUND
- * TRUTH when present (Oracle's shape) — not merely a Gown/non-Gown check
- * with the numeric threshold still deciding KK vs R-Studio underneath.
- *
- * Why: cross-checked Item Description against the numeric threshold across
- * the full Apr 2021–Sep 2026 history (79,372 rows) once real historical data
- * was available (the ~2-month live window this rule first shipped against
- * happened to have zero disagreements — not representative). Found ~3,100
- * rows (3.9%) where they disagree, almost all a plain "GOWN" (R-Studio) item
- * whose style number happens to fall under 50,000, which the numeric rule
- * alone would call KK. Item Description wins every time there's a conflict —
- * it's literally what Oracle calls the product; the numeric threshold was
- * always a proxy, built for the old sheet which had no Item Description at
- * all.
- *
- * "Other / Non-Gown": anything not containing "gown" (SAMPLE, DUPATTA, PENT,
- * FABRIC UNSTICHED SAARI, blanks, ...) — confirmed with the user. Numeric
- * fallback below only applies when there's no Item Description column at
- * all (old-sheet shape) — there's no signal to say otherwise there, and
- * every row in that shape *was* Gown-family in practice.
- */
 export function classifyBrand(
   itemDesc: string | undefined,
   sn: string,
@@ -289,42 +204,20 @@ export function classifyBrand(
   if (itemDesc !== undefined) {
     const d = itemDesc.trim().toUpperCase();
     if (!d) return "unknown";
-
-    // 1. Gowns — the description alone decides (confirmed with the user,
-    //    Oct 2026): "GOWN…" is R-Studio, "KK GOWN…" is KK.
     if (d.includes("GOWN")) return d.startsWith("KK") ? "kk" : "rstudio";
-
-    // Not a gown. Everything Oracle bills here is fabric or suits.
-    if (d.startsWith("DUPATTA")) return "other";           // deliberately not guessed
+    if (d.startsWith("DUPATTA")) return "other";           
 
     const design = (ctx.design ?? "").trim();
     const remarks = (ctx.remarks ?? "").trim();
 
-    // 2. Suits. SAAR and RAAS are NOT split for now (user's call, Oct 2026) —
-    //    both are "unstitched". How to tell them apart, if that is wanted later:
-    //      SAAR = plain 4-digit design (1360) / description "SAARR …"
-    //      RAAS = design prefix "E-" (E-21173C, 5-digit)
-    //    (user-confirmed Oct 2026: "E- is all RAAS", "4-digit is SAAR").
-    //    The E- test comes BEFORE the remarks test on purpose: RAAS lines carry
-    //    remarks ("FABRIC CRAPE …") that would otherwise read as fabric.
     if (d.startsWith("SAAR") || d.startsWith("RAAS")) return "unstitched";
     if (/^E-/i.test(design)) return "unstitched";
-
-    // 3. Labotanica (fabric): "P-" designs are all Labotanica (user-confirmed).
-    //    Also remarks, any other "<letter>-" prefix (O-KA.1034 brocade) and
-    //    "FABRIC" in the description — O- was NOT specified by the user; it is
-    //    fabric by description, so it stays here.
     if (/^[A-Za-z]-/.test(design) || remarks || d.includes("FABRIC")) return "labotanica";
-
-    // 4. Plain 4- or 5-digit design numbers (1360, "DENVER 1290") are suits.
+    
     const digits = design.match(/\d+/);
     if (digits && (digits[0].length === 4 || digits[0].length === 5)) return "unstitched";
-
-    // 5. Anything else Oracle bills that is not a gown or a suit is fabric
-    //    (the "PRINTED FABRIC" lines, and "ARMANI BROCADE" with no design).
     return "labotanica";
   }
-  // No Item Description column — numeric/prefix fallback (old-sheet shape).
   const s = String(sn || "").trim();
   if (!s) return "unknown";
   if (/^(NR|CH)-?/i.test(s)) return "rstudio";
@@ -332,8 +225,6 @@ export function classifyBrand(
   return "unknown";
 }
 
-/** Fabric "sub cut": the fabric name from the Item Description — its first two
- *  words, skipping bare numbers ("CRAPE D/P NEW RANGE 3 …" → "CRAPE D/P"). */
 function fabricName(itemDesc: string | undefined): string {
   const words = String(itemDesc ?? "").toUpperCase().replace(/[\[\]]/g, " ").split(/\s+/)
     .filter((w) => w && !/^[\d.]+$/.test(w));
@@ -350,9 +241,6 @@ interface ParsedRow {
   brand: Brand;
 }
 
-/** One row → the six fields every aggregation below needs, using whichever
- *  column shape detectColumns() found (dedicated columns or Design-derived). */
-/** Sub cuts that are the same cut under another code (user-confirmed Nov 2026). */
 const SUBCUT_SAME: Record<string, string> = { AKE: "AK", SGO: "SG", LCO: "LC" };
 
 function extractRow(colMap: ColumnMap, r: SheetRow): ParsedRow {
@@ -379,15 +267,6 @@ function extractRow(colMap: ColumnMap, r: SheetRow): ParsedRow {
   const remarks = colMap.remarks ? String(r[colMap.remarks] ?? "").trim() : "";
   const brand = classifyBrand(itemDesc, sn, { design, remarks });
 
-  // Fabric and suit designs are not "<cut>.<style>" like gowns, so they get
-  // their own labelling. The style keeps its FULL design code: stripping the
-  // "E-" prefix would make 3 fabric codes equal real gown style numbers
-  // (9033, 9101, 9124), mixing up stock and photos.
-  //
-  // "[SOLO]" / "SOLO" is dropped from the end of the code: Oracle writes some bills of a design as
-  // "E-21311B [SOLO]" and others as "E-21311B", but it is the same design
-  // (user-confirmed Oct 2026; Oracle's own design filter returns both). Other
-  // tags — "[NK]", "[WN]" — are NOT confirmed and are kept as they come.
   const code = design
     .replace(/(?:\s*(?:[[\]]\s*(?:SOLO|NK|WN)\s*[[\]]?|(?:SOLO|NK|WN)\s*[[\]]|SOLO))+\s*$/i, "")
     .trim();
@@ -395,8 +274,6 @@ function extractRow(colMap: ColumnMap, r: SheetRow): ParsedRow {
     sn = code || "Unknown";
     sc = fabricName(itemDesc);
   } else if (brand === "unstitched") {
-    // Grouped by cloth, same as fabric; the "SAARR"/"RAAS" brand word is
-    // dropped so SAAR and RAAS crape sit under one "CRAPE PURE" cut.
     sn = code || "Unknown";
     sc = fabricName((itemDesc ?? "").replace(/^\s*(SAARR?|RAAS)\s+/i, ""));
   }
@@ -405,36 +282,12 @@ function extractRow(colMap: ColumnMap, r: SheetRow): ParsedRow {
 
 // ─── MAIN PROCESSOR ─────────────────────────────────────────────────────────
 
-/**
- * Buyer names that are void/cancellation markers, not real customers —
- * confirmed with the user (Sep 2026): "CHANGE BARCODE" is how Oracle records
- * a barcode being cancelled/reissued, filed under a fake party name. Must
- * never appear anywhere in the dashboard — not in totals, not as a customer,
- * not in any tab — so these rows are dropped before anything else touches
- * them, for both sales and returns, rather than filtered out in just one
- * view. Add further confirmed void-markers here, not ad hoc per feature.
- *
- * "CANCEL" was added the same way (confirmed with the user, Sep 2026): it
- * appears only in GOODS_RETURN — 1 row, 1 piece, style 9784, bill 88 of
- * 05/Jun/26 — and is a cancellation marker, not a party.
- */
 const EXCLUDED_BUYERS = new Set(["CHANGE BARCODE", "CANCEL"]);
 
 function isExcludedBuyer(name: unknown): boolean {
   return EXCLUDED_BUYERS.has(String(name ?? "").trim().toUpperCase());
 }
 
-/**
- * @param rows Sales/dispatch rows (required).
- * @param returnRows Goods Return rows (optional — omit or pass [] when the
- *   returns tab isn't configured; every figure stays gross, dashboard renders
- *   exactly as it did before returns existed).
- * @param opts.skipReturnBrands Goods Returns of these brands are dropped. Used
- *   while sales come from the DASH sheet, which carries gowns only: suit and
- *   fabric returns would otherwise be subtracted from sales that were never
- *   loaded (Nov 2026: 2,778 pcs / ₹91 L, 13 customers net negative —
- *   user-confirmed to drop them).
- */
 export function process(
   rowsIn: SheetRow[],
   returnRowsIn: SheetRow[] = [],
@@ -449,7 +302,6 @@ export function process(
     ? detectColumns(Object.keys(returnRowsIn[0]), "Goods Return sheet")
     : null;
 
-  // Drop void/cancellation rows before anything else sees them.
   const skipRet = new Set(opts.skipReturnBrands ?? []);
   let rows = rowsIn.filter((r) => !isExcludedBuyer(r[colMap.cust]));
   let returnRows = returnsColMap
@@ -457,9 +309,6 @@ export function process(
         !(skipRet.size && skipRet.has(extractRow(returnsColMap, r).brand)))
     : returnRowsIn;
 
-  // One buyer, one name: spellings that differ only in capitals or spacing
-  // ("Roop Kala" until Mar 2025, "ROOP KALA" after — user-confirmed Nov 2026)
-  // become the spelling with the most sales lines, in sales and returns alike.
   const nameKey = (s: unknown) => String(s ?? "").trim().replace(/\s+/g, " ").toUpperCase();
   const spellings = new Map<string, Map<string, number>>();
   const countName = (s: unknown, w: number) => {
@@ -496,7 +345,6 @@ export function process(
   const custAcc    = new Map<string, CustAcc>();
   const styleAcc   = new Map<string, StyleAcc>();
   const monthlyAcc = new Map<string, number>();
-  // drill: customer → subcut → style → DrillAcc
   const drill = new Map<string, Map<string, Map<string, DrillAcc>>>();
 
   const getSub = (k: string): SubAcc => {
@@ -558,17 +406,6 @@ export function process(
     if (date) dr.dates.add(date);
   }
 
-  // ── Goods Returns: net into the same accumulators, by (customer, style) ──
-  // Deliberately NOT touching `.dates` anywhere (style/customer reorder-freq
-  // signals, and monthlyAcc's dispatch trend) — a return isn't a new order
-  // and shouldn't look like reorder activity or dispatch volume. Only qty/
-  // revenue are adjusted. Matched in aggregate, not against a specific sale
-  // line: Goods Return bill numbers don't reliably resolve to a sale in the
-  // currently-loaded window (confirmed against real data — a return can
-  // reference a sale outside it, or in historical data not yet loaded), so
-  // exact-bill matching would silently drop most returns. Net totals CAN go
-  // negative for a given customer/style if its original sale isn't in the
-  // currently-loaded data — surfaces the gap rather than hiding it.
   const returns: RawRow[] = [];
   if (returnsColMap) {
     for (const r of returnRows) {
@@ -597,7 +434,6 @@ export function process(
     }
   }
 
-  // ── Sub cuts (sorted by qty desc, exclude Unknown) ───────────────────────
   const subcuts: SubCut[] = [...subcutAcc.entries()]
     .filter(([sc]) => sc && sc !== "Unknown")
     .sort((a, b) => b[1].qty - a[1].qty)
@@ -609,7 +445,6 @@ export function process(
       styles: v.styles.size,
     }));
 
-  // ── Customers (sorted by qty desc, exclude Unknown) ──────────────────────
   const customers: Customer[] = [...custAcc.entries()]
     .filter(([c]) => c && c !== "Unknown")
     .sort((a, b) => b[1].qty - a[1].qty)
@@ -621,9 +456,6 @@ export function process(
       vc: v.styles.size,
     }));
 
-  // ── Style groups: ALL styles sent; client filters by user-set threshold ──
-  // (Original Python and earlier TS port filtered server-side with qty > 10.
-  // Now the threshold is a UI control on the client, so we send everything.)
   const styleGroupsRaw = new Map<string, StyleEntry[]>();
   for (const [sn, v] of styleAcc.entries()) {
     if (v.sc && v.sc !== "Unknown") {
@@ -647,7 +479,6 @@ export function process(
       s: entries.sort((a, b) => b.qty - a.qty),
     }));
 
-  // ── Monthly trend (sorted chronologically, pretty labels) ────────────────
   const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const monthly: MonthlyEntry[] = [...monthlyAcc.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]))
@@ -656,9 +487,6 @@ export function process(
       return { m: `${monthNames[parseInt(mo) - 1]} ${y.slice(2)}`, q };
     });
 
-  // ── Drill-down: ALL customers, top 10 SCs each, ALL styles in each ──────
-  // (No style cap: a customer can have 600+ styles in one sub cut and the
-  // client picks how many to show. Originally capped at 25.)
   const drillJson: DrillData = {};
   const allCustNames = customers.map((c) => c.name);
   for (const cust of allCustNames) {
@@ -693,9 +521,6 @@ export function process(
     drillJson[cust] = scData;
   }
 
-  // ── Clustered customers + clustered drill-down ──────────────────────────
-  // Merge customers within the same cluster (per CLUSTERS config).
-  // Standalone customers (not in any cluster) appear unchanged.
   const clusterLookup = buildClusterLookup();
   const clusterMembership: Record<string, string> = {};
   for (const c of customers) {
@@ -703,7 +528,6 @@ export function process(
     if (cluster) clusterMembership[c.name] = cluster;
   }
 
-  // Aggregate customer-level metrics per cluster.
   type ClusterAgg = { qty: number; rev: number; scs: Set<string>; styles: Set<string>; memberCount: number };
   const clusterAgg = new Map<string, ClusterAgg>();
   const standaloneCustomers: Customer[] = [];
@@ -719,16 +543,12 @@ export function process(
       agg.qty += c.qty;
       agg.rev += c.revenue;
       for (const sc of c.sc) agg.scs.add(sc);
-      // Style count merges via vc — we can't get exact unique-style-merged here
-      // without re-walking raw, so we sum vc (rough upper bound — see below for exact).
       agg.memberCount += 1;
     } else {
       standaloneCustomers.push(c);
     }
   }
 
-  // For accurate styles-count per cluster, we need to count *distinct* styles
-  // across all member customers. Walk styleAcc once.
   const clusterStyleSets = new Map<string, Set<string>>();
   for (const [sn, v] of styleAcc.entries()) {
     for (const memberCust of v.custs) {
@@ -740,7 +560,6 @@ export function process(
     }
   }
 
-  // Build Customer rows for each cluster, sort with standalones, then sort all by qty desc.
   const clusterCustomerRows: Customer[] = [...clusterAgg.entries()].map(([name, v]) => ({
     name,
     qty: v.qty,
@@ -752,13 +571,10 @@ export function process(
   const clusteredCustomers: Customer[] = [...clusterCustomerRows, ...standaloneCustomers]
     .sort((a, b) => b.qty - a.qty);
 
-  // Build cluster-level drill-down by merging member drill data.
   const clusteredDrill: DrillData = {};
-  // Helper: merge multiple member drill entries for one cluster
   for (const cluster of CLUSTERS) {
     const members = cluster.members
       .map((m) => {
-        // Find canonical (case-insensitive) name as it appears in customers
         const found = customers.find((c) => c.name.trim().toLowerCase() === m.trim().toLowerCase());
         return found?.name;
       })
@@ -766,7 +582,6 @@ export function process(
 
     if (members.length === 0) continue;
 
-    // Aggregate sub-cut → style across all members
     type StyleMerge = { qty: number; rev: number; price: number; freq: number };
     type SubMerge = { qty: number; rev: number; styles: Map<string, StyleMerge> };
     const subMerge = new Map<string, SubMerge>();
@@ -787,16 +602,12 @@ export function process(
           }
           exist.qty += st.qty;
           exist.rev += st.rev;
-          // Take the max price seen (different members might have different rates)
           if (st.price > exist.price) exist.price = st.price;
-          // Freq is approximate when merging — sum, but cap conceptually at sum of unique dates.
-          // For accuracy we'd walk raw rows; for performance, summing freq is close enough.
           exist.freq += st.freq;
         }
       }
     }
 
-    // Shape into final structure: top 10 sub-cuts, all styles each
     const scEntries: [string, SubMerge][] = [...subMerge.entries()];
     scEntries.sort((a, b) => b[1].qty - a[1].qty);
     const topScs = scEntries.slice(0, 10);
@@ -813,7 +624,6 @@ export function process(
     }
   }
 
-  // Date range string ─────────────────────────────────────────────────────
   let dateRange = "";
   if (allDates.length) {
     const mn = new Date(Math.min(...allDates.map((d) => d.getTime())));
@@ -823,7 +633,6 @@ export function process(
     dateRange = `${fmt(mn)} – ${fmt(mx)}`;
   }
 
-  // ── Raw rows (compact, for date filtering on client) ────────────────────
   const raw: RawRow[] = rows.map((r) => {
     const { cust, sc, sn, qty, price, date, brand } = extractRow(colMap, r);
     const dt = parseDate(date);
