@@ -109,12 +109,8 @@ export function parseDate(d: unknown): Date | null {
       }
     }
   }
-
-  // 4. Native JS fallback
-  const fallback = new Date(s);
-  if (!isNaN(fallback.getTime())) {
-      return new Date(Date.UTC(fallback.getFullYear(), fallback.getMonth(), fallback.getDate()));
-  }
+  // No catch-all fallback: new Date("1") is 1 Jan 2001, so a junk cell would
+  // land in 2001 instead of staying undated.
   return null;
 }
 

@@ -114,6 +114,30 @@ async function loadAliases(): Promise<Map<string, string>> {
   return m;
 }
 
+let aliasCache: { m: Map<string, string>; at: number } | null = null;
+
+/** Renames "Buyer Name" through `party_aliases` on rows read from the Google
+ *  Sheet. Never throws: with Supabase unset or unreachable the names stay as
+ *  the sheet spells them (last good alias list is reused if there is one). */
+export async function foldPartyAliases(rows: SheetRow[], force = false): Promise<SheetRow[]> {
+  if (!oracleConfigured() || !rows.length) return rows;
+  let m = aliasCache?.m;
+  if (force || !aliasCache || Date.now() - aliasCache.at > CACHE_TTL_MS) {
+    try {
+      m = await loadAliases();
+      aliasCache = { m, at: Date.now() };
+    } catch (err) {
+      console.error("party_aliases read failed:", err instanceof Error ? err.message : err);
+    }
+  }
+  if (!m?.size) return rows;
+  return rows.map((r) => {
+    const buyer = s(r["Buyer Name"]);
+    const to = m.get(aliasKey(buyer));
+    return to && to !== buyer ? { ...r, "Buyer Name": to } : r;
+  });
+}
+
 // ── Row shaping ─────────────────────────────────────────────────────────────
 
 interface BillLine {

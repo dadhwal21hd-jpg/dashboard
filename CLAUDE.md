@@ -1,762 +1,438 @@
 # kk-dashboard — CLAUDE.md
 
-Internal sales-analytics dashboard ("SDWL AI LENS") for a garment manufacturer.
-Reads order rows from a Google Sheet, aggregates them server-side, and serves a
-single self-contained HTML dashboard behind Google sign-in.
+Internal sales dashboard ("SDWL AI LENS") for a garment manufacturer. Reads
+sales and Goods Return rows from a Google Sheet, aggregates them server-side,
+and serves one self-contained HTML dashboard behind Google sign-in. Hosted on
+Vercel (env vars live there; full list in [SETUP.md](SETUP.md)).
 
-## Architecture — read this first
+Everything a session needs to know is in this file — rules, business decisions
+and the reasons behind them. Code comments are deliberately thin; **when you
+change a rule, change it here.** Every rule marked "user-confirmed" came from the
+owner; don't undo one without asking.
 
-The app is **two codebases in one repo** and the split matters:
+---
 
-1. **Next.js App Router (TypeScript)** — auth, Sheet fetching, aggregation.
-   Ends at [src/app/api/dashboard/route.ts](src/app/api/dashboard/route.ts).
-2. **`public/dashboard_template.html`** — a ~2400-line standalone HTML file with
-   all dashboard UI, CSS and JS inline. **This is where every dashboard feature
-   lives.** It is not React, not TypeScript, not bundled, and not linted.
+## 1. Architecture — read first
+
+**Two codebases in one repo:**
+
+1. **Next.js App Router (TypeScript)** — auth, data fetching, aggregation. Ends at
+   [src/app/api/dashboard/route.ts](src/app/api/dashboard/route.ts).
+2. **[public/dashboard_template.html](public/dashboard_template.html)** — ~4,400
+   lines, all dashboard UI/CSS/JS inline. **Every dashboard feature lives here.**
+   Not React, not TypeScript, not bundled, not linted.
 
 The seam: the route reads the template as a string and replaces the literal
-`/*__DATA__*/` placeholder with `const DATA = {...};`. The page component
+`/*__DATA__*/` with `const DATA = {...};`. The page
 ([src/app/dashboard/page.tsx](src/app/dashboard/page.tsx)) fetches that HTML and
-renders it in an **iframe via a blob URL** — so template JS has no access to the
-Next app, and vice versa. Debugging the dashboard means using the iframe's
-context in devtools.
+shows it in an **iframe via a blob URL** — template JS can't reach the Next app
+and vice versa. Debug the dashboard in the iframe's devtools context.
 
-**If a request is about a tab, chart, table, drill-down, filter, export or the
-lock UI → edit `public/dashboard_template.html`.** Only touch `src/lib/` when
-the *shape of the data* has to change.
-
-## Request flow
+**Request is about a tab, chart, table, drill-down, filter, export or the lock →
+edit the template.** Touch `src/lib/` only when the *shape of the data* changes.
 
 ```
-Google Sheet
-  → src/lib/sheets.ts        service-account fetch, 5-min in-memory cache
-  → src/lib/processor.ts     rows → DashboardData (aggregation, clustering)
-  → src/app/api/dashboard/   auth gate + inject DATA into the template
-  → src/app/dashboard/       blob-URL iframe
+Google Sheet  DASH (sales) + GOODS_RETURN (returns)
+  → src/lib/sheets.ts       service-account read, 5-min in-memory cache
+  → src/lib/oracle.ts       foldPartyAliases(): buyer names via Supabase party_aliases
+  → src/lib/processor.ts    rows → DashboardData (aggregation, netting, clusters)
+  → src/app/api/dashboard/  auth gate, + designs + stock, inject DATA, compress
+  → src/app/dashboard/      blob-URL iframe
 ```
 
-- `?refresh=1` on the API busts the sheet cache.
-- `/api/dashboard` **compresses its own response** (`encodeFor()`: brotli q5,
-  else gzip). Next compresses pages but not route-handler responses —
-  measured 3.67 MB on the wire before, 267 KB after, ~18 ms of CPU. On a phone
-  on weak 4G that was 23.6 s → 4.6 s for the whole page.
-- Auth: NextAuth + Google OAuth, allowlist from `ALLOWED_EMAILS`
+- `?refresh=1` busts the sheet / alias / design caches (the "↻ Refresh data" button).
+- `?refreshImages=1` additionally clears cached design **photos** — deliberately
+  separate, see §8.
+- Auth: NextAuth + Google OAuth, allowlist `ALLOWED_EMAILS`
   ([src/lib/auth.ts](src/lib/auth.ts)); `src/middleware.ts` guards routes.
+- The route **compresses its own response** (`encodeFor()`: brotli q5, else gzip).
+  Next doesn't compress route-handler responses: 3.67 MB → ~267 KB, ~18 ms CPU;
+  on weak 4G the page went 23.6 s → 4.6 s.
+- `maxDuration = 60`.
 
-## Data model
+---
 
-`DashboardData` in [src/lib/types.ts](src/lib/types.ts) is the contract between
-the two halves — the template consumes it verbatim as `DATA`. Changing a field
-name there means grepping the template too.
+## 2. Where the data comes from (as of 11 Nov 2026)
 
-Key pieces:
+**Owner's decision (Nov 2026): sales AND returns come from the Google Sheet, not
+Supabase.** Keep it that way until the owner says otherwise.
 
-- `raw: RawRow[]` — every order row, compact keys:
-  `c` customer · `sc` sub cut · `sn` style number · `q` qty · `p` price ·
-  `d` raw date string · `dt` ISO date or null.
-  **Most client-side features are computed from `raw`, not from the pre-aggregated
-  arrays**, because the global filter bar must be able to re-derive everything.
-- `subcuts` / `customers` / `style_groups` / `monthly` — pre-aggregated views.
-  **Net of Goods Returns** — see "Oracle source + Goods Returns" below.
-- `drill` / `clustered_drill` — customer → sub cut → style, precomputed. Also
-  net of returns.
-- `cluster_membership` — original customer name → cluster name.
-- `returns_raw: RawRow[]` — Goods Return rows, same shape as `raw`, positive
-  quantities (units returned, not negated). Empty when returns aren't
-  configured. Everything above already has these netted in server-side; this
-  is for the client to net them again under its own filters and for the
-  Returns tab — see below.
+| What | Source | Setting |
+|---|---|---|
+| Sales | Sheet tab **`DASH`** | `GOOGLE_SHEET_ID`, `GOOGLE_SHEET_RANGE=DASH` |
+| Goods Returns | Sheet tab **`GOODS_RETURN`** | `GOOGLE_RETURNS_RANGE=GOODS_RETURN` |
+| Buyer-name merging | Supabase `party_aliases` | `PROJECT_URL`, `ANON_KEY` |
+| Stock on hand | Supabase `stock_available`, `kk_stock_available` | same |
+| Design photos | separate catalogue sheets + Drive | `GOOGLE_DESIGNS_*` |
 
-## Client-side conventions (template)
+- **`ORACLE_UPDATED` is ignored** — owner's instruction. It only covers ~Jul 2026
+  onward; pointed at it, every return since 2021 was netted against four months
+  of sales and 19 customers went negative (measured 11 Nov 2026).
+- **DASH** (owner-maintained, cleaned history): 1 Apr 2021 – 7 Nov 2026, 78,651
+  rows on 11 Nov 2026 (plus ~14k fully blank rows at the bottom — harmless).
+  Columns: Item Description · Design · ArtSize · Buyer Name · Bill No. · Bill Dt.
+  · (blank header) · Quantity · BP · MFG Lot. Price column is **`BP`**. Gowns
+  plus ~570 fabric lines. Cold read ~3.5 s.
+- **GOODS_RETURN**: 6 Apr 2021 onward, ~4,100 rows. Columns: Item Description ·
+  Design · Buyer Name · Bill No. · Bill Dt. · Quantity · Rate. No reason column.
+- If a returns read fails, sales still render (returns read never throws).
+- `src/lib/sheets.ts` matches columns by fuzzy header (`NEEDED` alias map in
+  processor.ts) — add an alias rather than asking for a sheet rename.
 
-- **`getFA()`** is the filter-aware aggregator: it recomputes subcuts, customers,
-  styles and monthly totals from `FILTERED_RAW`, memoised in `_FA`.
-  Any new feature that must respect the global filter bar goes through it, or
-  walks `FILTERED_RAW.length < D.raw.length ? FILTERED_RAW : D.raw` directly.
-  `applyGlobalFilter()` sets `FILTERED_RAW` and clears `_FA`.
-- Render functions per tab: `renderOverview`, `renderSubcuts`, `renderSG`
-  (style numbers), `renderCusts`, `renderReorderRadar`, `renderReturns`,
-  `renderClusters`, `renderInsights` (map: `TAB_RENDERERS`).
-  **`renderAll()` draws only the tab on screen** and marks the rest stale
-  (`_staleTabs`); `switchTab()` draws a stale tab when it's opened. So code
-  must not read another tab's DOM expecting it to be current — read the data
-  (`getFA()`, `D`) instead. Drawing all eight on every filter tap cost ~2s on
-  a mid-range phone (measured, CPU-throttled Chrome).
-- **Style Numbers builds a group's rows only when it's opened** (`sgFill()` /
-  `sgSetOpen()`; `_SG_BODIES` holds the per-group table builders,
-  `_SG_STYLES` the style numbers the search box matches against). Building
-  all ~4,700 rows up front was 108k of the page's 129k elements. The Returns
-  style table draws its first 60 rows, then appends the rest in batches.
-- Helpers: `fmt()` ₹ short form, `fN()` en-IN number, `esc()` HTML escape,
-  `scColor()` stable per-sub-cut colour, `freqBadge()` reorder-count pill,
-  `rn()` rank medal.
-- **Never embed JSON in an `onclick` attribute.** The established pattern is to
-  stash data on a global map (`window._drillMap`, `window._scMap`) or on a
-  `data-*` attribute and look it up in the handler.
-- Money is INR; `fmt()` switches to L/Cr above 1e5/1e7.
+**Dormant Supabase sales/returns path** (kept, not called by the route):
+`fetchOracleSales` / `fetchOracleReturns` / `fetchOracleHistory` /
+`fetchDashSales` / `useDashSales` in [src/lib/oracle.ts](src/lib/oracle.ts) read
+`oracle_bill_lines` (ledger from 1 Apr 2026) and `oracle_gr_report`. Rules for
+that data if it's ever switched back:
+- Price is `SP`; `BP` is empty on API lines.
+- Never drop a line because `gone_since` is set — the piece left, it's sold.
+- `oracle_gr_report` is emptied and reloaded twice a day; a read under 300 rows
+  or under half the last good one keeps the previous figures.
+- A bill is Bill_No + Bill_Dt + buyer; bill numbers repeat across Oracle's books.
+- While sales are gowns-only, pass `skipReturnBrands: ["unstitched","labotanica"]`
+  to `process()` so suit/fabric returns don't net against sales never loaded
+  (Nov 2026: 13 customers negative, 2,778 pcs / ₹91 L — user-confirmed). With
+  DASH + GOODS_RETURN it makes no difference (only ~62 fabric return rows), so
+  the route doesn't pass it.
 
-## The lock UI (important, easy to break)
+---
+
+## 3. Data rules (all user-confirmed unless noted)
+
+### Rows that never count
+- **`EXCLUDED_BUYERS`** = `CHANGE BARCODE`, `CANCEL` — void/cancellation markers
+  filed under a fake party name. Dropped from sales and returns at ingestion,
+  before anything else (CHANGE BARCODE was 967 rows / ₹2.2 Cr of fake revenue at
+  normal-looking prices). Add new confirmed void markers to this set, never
+  filter per view.
+- **Sanity-check outliers before trusting a big number.** A "26k pieces" report
+  traced to two rows (qty 5,609 and 20,449) with every other field blank — a
+  paste into the wrong column, fixed at source by the user. A real bulk order
+  looks different: several rows, real customer, real styles, real prices.
+
+### Buyer names
+- **Spellings that differ only in capitals/spacing are one buyer.** `process()`
+  folds them to the spelling with the most sales lines, sales and returns alike
+  ("Roop Kala" → "ROOP KALA").
+- **`party_aliases` (Supabase) merges real spelling variants** — applied to the
+  sheet rows by `foldPartyAliases()` before `process()`. 38 aliases; 12 hit DASH
+  / GOODS_RETURN names, e.g. GULLU EXCLUSIVE OLD + GULLU EXCLUSIVE INTERNATIONAL
+  → Gullu Exclusive, SHAKUNTLAM XCLUSIF(.) → SHAKUNTLAM (RAJOURI), ROOP KALA OLD
+  → Roop Kala, FRONTIER RAAS [P] LTD. → FRONTIER RAAS (P) LTD. Never throws: with
+  Supabase unset/down names stay as the sheet spells them. Key = trimmed,
+  whitespace-collapsed, lowercase (same as WIP_HEART's `party_alias._norm`).
+- **Own-people accounts are never aliased** (`INTERNAL_PARTIES` in oracle.ts:
+  Prakash Ji, Ankur Ji, Pathak Ji, Kriti Madam House / Kriti Mam / Kriti Mam
+  Friends, Jyoti Mam House, Manoj Ji, Raja Sir). The alias table maps some onto
+  real customers ("prakash ji" → "Dimple Fashion"), which would bury internal
+  dispatches in a customer's revenue.
+- **Customer clusters** ([src/lib/clusters.ts](src/lib/clusters.ts)) are a
+  separate, display-level grouping of sister firms / related buyers (19
+  clusters). Matching is case-insensitive and trimmed; members must match names
+  *after* alias folding. Edit the array, commit, push. Don't merge on generic
+  shared words ("fashion", "house") without confirmation — a wrong merge
+  misrepresents a real business relationship.
+
+### Design → sub cut + style
+- Gown `Design` packs sub cut + style: `G-SGONC.84752` → sub cut `SGONC`, style
+  `84752` (`parseDesign()`). The leading `<letters>-` is discarded.
+- **Colourway suffixes are separate items**: `G-SG.16944C` → style `16944C`,
+  `G-SG.53211[CH224]` → `53211[CH224]`. Kept verbatim, not collapsed.
+- **Sub cuts AKE = AK, SGO = SG, LCO = LC** (`SUBCUT_SAME`). Longer variants
+  (SGOB, AKEBO, LCOV, …) are NOT merged.
+
+### Brands — `classifyBrand()` in processor.ts, stored as `RawRow.br`
+Item Description is ground truth; checked in this order:
+1. Contains `GOWN` → **KK** if it starts "KK", else **R-Studio**.
+2. `DUPATTA…` → `other` (shown as Unclassified, deliberately not guessed).
+3. Starts `SAAR`/`RAAS`, or design prefix **`E-`** → **Unstitched** (suits). "E- is
+   all RAAS". Checked before the remarks test: RAAS lines carry "FABRIC …"
+   remarks.
+4. Any other `<letter>-` prefix (**`P-`** is all Labotanica), any Remarks, or
+   "FABRIC" in the description → **Labotanica** (fabric). `O-` (brocade, not
+   specified by the user) stays here as fabric.
+5. Plain 4–5 digit design number (1360, "DENVER 1290") → **Unstitched** ("4-digit
+   is SAAR").
+6. Anything else → Labotanica. Blank description → `unknown`.
+
+Only when there's **no Item Description column at all** (old sheet shape): style
+< 50,000 → KK; ≥ 50,000 or `NR-`/`CH-` → R-Studio. This numeric rule was once
+primary and was wrong for ~3.9% of 79k rows (plain "GOWN" items under 50,000) —
+a small clean window is not proof a rule is right.
+
+- **SAAR and RAAS are deliberately not split** (owners want them together as
+  Unstitched). SAAR = plain 4-digit / "SAARR" description; RAAS = `E-` designs.
+- **Fabric/suit labelling** (`extractRow`): sub cut = cloth name = first two
+  words of Item Description, skipping numbers, minus the SAARR/RAAS word
+  ("CRAPE PURE"). Style keeps the **full design code** (`E-19551G`, `1360`) —
+  stripping the prefix would make 3 fabric codes (9033, 9101, 9124) equal real
+  gown styles and mix up stock and photos.
+- **Trailing `SOLO`, `[NK]`, `[WN]` tags are dropped** from suit/fabric codes
+  (`E-21311B [SOLO]` → `E-21311B`), tolerating typos (`[NK[`, `NK]`). Gown codes
+  untouched.
+- **Units are not comparable across brands**: PRINTED FABRIC is metres (~₹75),
+  gowns and suits are pieces/sets. On brand "All" they're simply added.
+- Client code reads brand via `rowBrand(r)` / `styleBrand(sn)` (lookup built once
+  from `D.raw`). There is no client re-derivation from the style number —
+  don't recreate the removed `brandOf(sn)`.
+
+### Dates — `parseDate()`
+Accepts, in order:
+- Google Sheets serial numbers (5 digits, e.g. 45397 → 15 Apr 2024).
+- A trailing time is stripped ("2026-11-10 10:00").
+- Oracle `DD/Mon/YY` and `DD-Mon-YY` (both separators occur in one sheet), and
+  months spelled out ("13/October/26", "4/Sept/21") — before this was handled,
+  5,340 pcs / ₹7.02 Cr sat in totals but in no month.
+- Numeric `d/m/y` with `/ - .` and 2- or 4-digit year — **day first**, unless the
+  middle number is > 12 (then month first). `yyyy-mm-dd`.
+- **Nothing else.** No `new Date(s)` catch-all: it turned junk like "1" or
+  "N/A 3" into 2001 dates (removed 11 Nov 2026). An unparseable cell stays
+  undated.
+
+### Goods Returns — netted dashboard-wide (user-confirmed)
+- **Aggregate netting by (customer, style), not bill matching** — most return
+  bills don't resolve to a sale in the loaded window. Netted in two places that
+  must stay in sync: server (`process()`, second pass over the same
+  accumulators) and client (`getFA()` over `FILTERED_RETURNS`, and
+  `openDrillByName()`'s filtered path).
+- `returns_raw` is a separate array with **positive** quantities — never mix
+  negative rows into `raw` (`parseQty()` clamps ≤0 to 0, and the template assumes
+  `r.q > 0` everywhere).
+- **Net can go negative** for a customer/style with no matching sale; left as-is
+  so the data gap is visible. On 11 Nov 2026 only one: MADHURAAG IMPEX −6 (6
+  returns on bills 11–12, Jul 2021, no sale anywhere in DASH).
+- Returns never touch `.dates`/`freq`, monthly dispatch totals, or Reorder
+  Radar's cadence — a return isn't an order.
+- Returns before DASH starts: 25 of FY21-22's 200 returns have no earlier sale,
+  all Apr–Sep 2021, 19 for styles nobody bought in DASH — pieces sold before
+  1 Apr 2021. Expected, not missing data. May 2021 is genuinely low (145 pcs) —
+  seasonal, per the owner.
+
+### Financial year
+Every "year" is the Indian FY, 1 Apr – 31 Mar, keyed `FY25-26` (`fyKey()`,
+`fyRange()`, `FY_MONTHS` = Apr→Mar).
+
+---
+
+## 4. Data model — `DashboardData` in [src/lib/types.ts](src/lib/types.ts)
+
+The contract between the halves; the template consumes it verbatim as `DATA`
+(`D`). Renaming a field means grepping the template.
+
+- `raw: RawRow[]` — every sales row, compact keys: `c` customer · `sc` sub cut ·
+  `sn` style · `q` qty · `p` price · `d` raw date · `dt` ISO date or null · `br`
+  brand. **Most client features compute from `raw`**, so the filter bar can
+  re-derive everything.
+- `returns_raw: RawRow[]` — same shape, positive quantities.
+- `subcuts` / `customers` / `style_groups` / `monthly` — pre-aggregated, net of
+  returns. All styles are sent; the client applies the threshold.
+- `drill` / `clustered_drill` — customer → top 10 sub cuts → all styles, net.
+- `clustered_customers`, `cluster_membership` (name → cluster).
+- Added by the route: `_fetched_at`, `_from_cache`, `_user`, `_master_code`,
+  `_customer_code`, `_designs` (style numbers with a photo), `_design_base`,
+  `_design_token`, `_stock` (style → units).
+
+---
+
+## 5. Template conventions
+
+- **`getFA()`** is the filter-aware aggregator (subcuts, customers, styles,
+  monthly, netted) from `FILTERED_RAW`/`FILTERED_RETURNS`, memoised in `_FA`.
+  New features that must respect the filter bar go through it.
+  `applyGlobalFilter()` sets the filtered arrays and clears `_FA`; anything
+  cached *on* `_FA` (`returnsGross()`, `getCMP()`) is invalidated for free.
+  `passesGlobalFilter()` / `passesNonDateFilter()` / `anyGlobalFilterActive()`.
+- Tab renderers (`TAB_RENDERERS`): `renderOverview`, `renderSubcuts`, `renderSG`,
+  `renderCusts`, `renderReorderRadar`, `renderReturns`, `renderClusters`,
+  `renderInsights`. **`renderAll()` draws only the visible tab** and marks the
+  rest stale (`_staleTabs`); `switchTab()` draws a stale tab when opened. Never
+  read another tab's DOM expecting it current — read `getFA()` / `D`. (Drawing
+  all eight per filter tap cost ~2 s on a mid-range phone.)
+- **Style Numbers builds a group's rows only when opened** (`sgFill()` /
+  `sgSetOpen()`, `_SG_BODIES`, `_SG_STYLES` for search) — building all ~4,700
+  rows up front was 108k of 129k page elements. `renderSG()` keeps expanded
+  groups open and re-applies the Sub Cut dropdown + search. The Returns style
+  table draws 60 rows then appends in batches.
+- Helpers: `fmt()` ₹ short form (L / Cr above 1e5 / 1e7), `fN()` en-IN number,
+  `esc()` HTML escape, `scColor()` per-sub-cut colour, `freqBadge()`, `rn()`.
+- **Never embed JSON in an `onclick`.** Stash data on a global map
+  (`window._drillMap`, `window._scMap`) or a `data-*` attribute.
+- Styling: `--accent: #b5622a` (terracotta), warm stone palette, `Syne` /
+  `IBM Plex Mono`. No framework.
+
+---
+
+## 6. The lock UI (easy to break)
 
 `LOCK_MODE` is `'locked' | 'unlocked' | 'customer'`:
-
 - **locked** (default) — customer names and most numbers redacted via
-  `body.locked` CSS rules.
-- **customer** — one customer revealed (`UNLOCKED_CUSTOMER`); everyone else stays
-  redacted (`.cust-redacted` / `.cust-revealed`).
+  `body.locked` CSS.
+- **customer** — one customer revealed (`UNLOCKED_CUSTOMER`), others redacted
+  (`.cust-redacted` / `.cust-revealed`).
 - **unlocked** — everything visible, gated by `_master_code`.
 
-**Any new UI that displays customer names must respect this** — mask them unless
-`LOCK_MODE === 'unlocked'` or the name is `UNLOCKED_CUSTOMER`. See
-`buyerLabel()` in the style-numbers drill for the pattern.
+**Any UI that shows customer names must mask them** unless
+`LOCK_MODE === 'unlocked'` or the name is `UNLOCKED_CUSTOMER` — use
+`buyerLabel()`. Redaction CSS is specificity-sensitive (hide rules contain
+`#cust-tbody`, so reveal rules must too); read the stylesheet comments first.
+The locked-mode CSS hides every `.bar-track`, which is why Compare drill cards
+use `.cmp-track`.
 
-The redaction CSS is specificity-sensitive (hide rules contain `#cust-tbody`, so
-reveal rules must too). Comments in the stylesheet explain each override — read
-them before adding rules.
+**The lock is visual only** — all data and both unlock codes are in the client
+payload. Never present it as security.
 
-The lock is **visual only**: `DATA`, including the unlock codes
-(`_master_code`, `_customer_code` from env), is in the client payload. Do not
-present it as a security boundary.
+---
 
-## Design thumbnails
+## 7. Features
 
-Optional feature, off unless `GOOGLE_DESIGNS_SHEET_ID` is set. A separate
-product-catalogue spreadsheet maps style code → Drive image;
-[src/lib/designs.ts](src/lib/designs.ts) reads it (10-min cache) and
-[src/lib/drive.ts](src/lib/drive.ts) fetches bytes.
+**Global filter bar** — date From/To, brand (`BRAND_FILTER`), qty, price. Brand
+narrows `FILTERED_RAW`, so every `getFA()` tab inherits it. `openDrillByName()`
+recomputes a customer's breakdown from filtered rows when any filter is active.
+On phones it folds behind `#gf-toggle` with `#gf-summary`
+(`renderFilterSummary()`); on desktop its wrappers are `display:contents` — keep
+that or the desktop bar changes.
 
-Real shape of that data, which the code is built around: each catalogue's
-`Item Code` joins to the orders sheet's `Style Number`, and the links are
-**direct file links**, one per style — folder links are supported but don't
-occur. Column detection is evidence-based, not header-only: the sheets have a
-populated `Image` column *and* an empty `Photo` column (and the second one has
-duplicate and blank headers), so header matching alone picks the wrong column.
+**Customer drill** — "By brand" strip (units · revenue · share, net) above the
+sub-cut cards; cards carry a brand tag; style rows show a brand badge on "All".
+Strip hidden in Compare mode. **Month on month** panel (`renderDrillMonths()` /
+shared `renderFyMonths()`, picks in `_fyMM`): the customer's FYs side by side
+Apr→Mar, default latest two, Revenue/Units; dispatched (gross of returns);
+From/To ignored; a month with no data yet shows "—", and an unfinished FY is
+compared on the same months only. The same panel opens for a sub cut (in the
+drill — that customer only, with a style picker — and on the Sub Cuts tab — all
+customers, hidden when locked).
 
-There is **one catalogue per branch** — `GOOGLE_DESIGNS_SHEET_ID` is a
-comma-separated list, merged first-source-wins, each sheet detected
-independently. Both together cover 97% of ordered styles and 99% of units;
-either alone covers only a third to two thirds, since the two barely overlap
-(350 codes in common).
+**Overview chart** — `drawBarLine()`: HTML bars (units) + SVG revenue line on its
+own right scale; gross of returns; `animateGrow()`; labels thinned to width;
+redrawn on `switchTab('overview')` and width-only resize (a chart drawn hidden
+has no width).
 
-The designs often live under a **different service account and Cloud project**
-than the orders sheet, hence `buildDesignsAuth()` in
-[src/lib/google.ts](src/lib/google.ts), which falls back to the main account.
+**Compare mode** (`⇄ Compare`, `CMP`, `#cmp-bar`) — full FYs side by side, or
+picked months across picked FYs. Works on Overview, Style Numbers and the
+Customers drill; other tabs show a `.cmp-na` banner. The picks are the dates
+(From/To ignored, `getCMP()` uses `passesNonDateFilter()`); net of returns.
+Partial years are flagged with `*` plus a one-click "same months only"
+(`cmpCoverage()`). Rank by total across compared years; a style qualifies for
+min-units in *any* year (so a collapse shows as a drop). No click-through from
+compare style rows (that drill reads date-filtered rows and would disagree).
+Quick FY buttons: `renderFyQuick()`.
 
-**The non-obvious part:** the template runs in a blob-URL iframe, so it has an
-*opaque origin* — relative URLs don't resolve and the NextAuth cookie is not
-sent on subresource requests. So `/api/design` is authorised by an HMAC token
-([src/lib/signing.ts](src/lib/signing.ts)) minted into `DATA._design_token`,
-and `DATA._design_base` carries the absolute origin. Any future feature that
-loads a URL from inside the template hits this same wall.
-
-`DATA._designs` is just the **list of style numbers that have an image**, not
-the Drive IDs — the client only needs presence, `/api/design` resolves IDs
-server-side, and the catalogue is far bigger than the order book.
-
-Client side: `designThumb(sn, 'sm'|'md')` renders a cell (empty string when the
-feature is off, hatched placeholder when the style has no image);
-`openDesign(sn)` opens the `#dz` lightbox, showing the image immediately and
-only then checking `?list=1` for siblings to page through. Designs are
-deliberately **not** redacted by `LOCK_MODE` — see the note in the stylesheet.
-
-Every failure path degrades to "no thumbnail", never to an error: a broken
-mapping sheet or unshared folder must not take the dashboard down.
-
-**One occasional failure is expected and self-heals**: a "Could not load this
-design" in the lightbox that clears up if you just try again — a one-off
-Drive/network blip, not a broken image (checked directly: the file in
-question loaded fine seconds later, both fast and authenticated paths, no
-sharing issue). `dzFail()` auto-retries once (800ms, cache-busted) before
-showing the error state, which now also has a manual Retry button. If the
-*same* style fails repeatedly rather than once, that's a real sharing
-problem, not this.
-
-**Performance / scalability, two fixes worth knowing about if this regresses:**
-
-1. `fetchImageBytes()` in [src/lib/drive.ts](src/lib/drive.ts) tries Google's
-   *public* thumbnail endpoint (`drive.google.com/thumbnail?id=…`) before
-   the authenticated Drive API path. Every sampled design image (40 across
-   the full catalogue range) turned out to be shared "anyone with the link" —
-   the catalogues feed a public storefront — so this is the common case, not
-   an edge case. It skips both Drive API calls the authenticated path needs,
-   costs nothing against Drive quota, and isn't subject to our own serverless
-   concurrency. Confirmed a non-public/nonexistent file reliably comes back
-   non-200/non-image here (never a misleading placeholder), so falling
-   through to the authenticated path on failure is safe.
-2. `fetchDesignMap()` in [src/lib/designs.ts](src/lib/designs.ts) is cached
-   via Next's `unstable_cache` (the Vercel Data Cache), not a module
-   variable. A module-level cache is per-lambda-instance; under a burst,
-   Vercel scales up many instances at once, and every cold one used to redo
-   both Sheets reads from scratch — traffic growth multiplied load on
-   Google's API instead of being absorbed by a cache. The Data Cache is
-   shared cluster-wide.
-
-Measured effect of both together: a burst of 60 concurrent thumbnail
-requests went from ~8s wall time with 3 failures (Drive quota/backoff under
-load) to ~2.7s with 0 failures on the same infrastructure.
-
-**Oct 2026, three more (phone image speed):**
-
-1. **`googleapis` is loaded on demand only** (`loadGoogleApis()` in
-   [src/lib/google.ts](src/lib/google.ts); the JWT comes straight from
-   `google-auth-library`). Bundled, it is an 11.5 MB chunk out of the 14 MB
-   every route loaded on a cold start — /api/design paid ~345ms to load code a
-   thumbnail almost never runs (public endpoint + Data Cache need none of it).
-   Now ~97ms. Only the folder listing, the private-file fallback and the
-   catalogue/orders sheet reads import it. **Don't add a top-level
-   `import { google } from "googleapis"` back.**
-2. **Vercel edge caching for token-signed image URLs**
-   (`Vercel-CDN-Cache-Control` via `cdnHeaders()` in the design route). The
-   edge key includes the token, so a copy is only reachable with that exact
-   signed URL; a repeat view (same user on another device, or after the
-   browser cache is cleared) skips the function entirely. Session-cookie
-   requests are never edge-cached — their URL carries no credential.
-3. **Lightbox shows the cached thumbnail at once** (`.dz-ph`, sized by height
-   so it fills exactly the box the full photo lands in) and fades the ~230 KB
-   w1200 photo in over it. Thumbnails also decode async.
-
-**Cached "basically forever" (Sep 2026 follow-up)**, per the user asking to
-keep photos cached always:
-
-- The design token (`getStableDesignToken()` in
-  [src/lib/signing.ts](src/lib/signing.ts)) now lives 30 days
-  (`DEFAULT_TTL_MS`), reused for 25 of those days
-  (`STABLE_TOKEN_REVALIDATE_SECONDS`) before a fresh one is minted — up from
-  6h. Deliberately long, not reckless: every sampled design image is already
-  shared "anyone with the link" on Drive, so a longer-lived token doesn't
-  expose anything that wasn't already exposable to anyone holding a link; it
-  just lets the browser and the shared cache below treat an image URL as
-  stable for weeks instead of hours.
-- `/api/design`'s `Cache-Control` ([src/app/api/design/route.ts](src/app/api/design/route.ts))
-  is `private, max-age=2160000, immutable` (25 days), matching that window —
-  once the token rotates, the old URL is never requested again anyway, so
-  caching longer than the token's life buys nothing.
-- `drive.ts`'s two `unstable_cache`s (folder listings, image bytes) use
-  `revalidate: false` (`CACHE_FOREVER`) instead of a timed window — never
-  revalidates on a schedule, only via an explicit `revalidateTag`. A design
-  photo essentially never changes in place once uploaded (a *new* photo gets
-  a new Drive file ID, i.e. a new cache entry, not a stale one), so there was
-  no real freshness window to pick in the first place.
-- `clearDriveCache()` (previously dead code) is wired to a **new,
-  deliberately separate** query param: `GET /api/dashboard?refreshImages=1`.
-  This is intentionally NOT the routine "↻ Refresh data" button
-  (`?refresh=1`, [src/app/dashboard/page.tsx](src/app/dashboard/page.tsx)) —
-  busting the image cache on every routine data refresh would force
-  everyone to re-download every photo on every refresh, defeating the whole
-  point of caching forever. `refreshImages=1` is an undocumented-in-UI
-  escape hatch (same precedent as `/api/design?diag=1`) for the rare case a
-  specific photo was actually replaced on Drive and needs to show up sooner
-  than "next time someone changes the catalogue's file ID" would handle.
-
-**A third, later fix (Sep 2026): thumbnails were still slow on repeat views**
-— single loads measured 0.7–2.8s live even after the above, and a *repeat*
-request for the exact same image was still ~300–600ms, never near-instant.
-Root cause: `/api/dashboard` minted a brand-new `mintDesignToken()` on every
-single page load, and every design-image URL embeds that token
-(`&t=...`) — so every reload produced entirely different image URLs, and the
-browser's own HTTP cache (`Cache-Control` on `/api/design`'s responses) never
-got a chance to be reused, no matter how aggressive its `max-age` was, because
-the URL was never the same twice. Fixed with `getStableDesignToken()` in
-[src/lib/signing.ts](src/lib/signing.ts) — the same token is now reused for
-6 hours (`unstable_cache`, same pattern as `fetchDesignMap()`), safely under
-the token's own 12h validity. `/api/design`'s `Cache-Control` max-age was
-aligned to that same 6h window with `immutable` added, since a URL that
-actually stays stable for 6h genuinely never changes what it returns in that
-window.
-
-**Fourth fix, same day**: `bytesCache`/`listCache` in
-[src/lib/drive.ts](src/lib/drive.ts) were still plain per-lambda-instance
-`Map`s at that point — a cold instance still paid the full Drive-fetch cost
-once, same as `fetchDesignMap()` did before *it* was moved to
-`unstable_cache`. Moved both to `unstable_cache` too (`cachedImageBytes` /
-`cachedFolderImages`), same shared-cache pattern, now cluster-wide. Image
-bytes are stored base64-encoded (`unstable_cache` needs a JSON-serializable
-value, not a `Buffer`) and decoded back on the way out — verified this
-round-trips byte-for-byte, not just "doesn't crash". Applied the exact same
-"throw on failure, don't return null" discipline as `fetchDesignMap()`
-(`computeImageBytes`/`computeFolderImages` throw; the exported
-`fetchImageBytes`/`listFolderImages` catch and return `null`/`[]`) for the
-same reason: a shared cache makes a transient failure durable and global
-unless the failure path is kept out of what gets cached.
-
-Verified against a local production build (`next start`, not `next dev`):
-base64 round-trip produces byte-identical, valid JPEGs; a bad file ID fails
-cleanly (404) without affecting any other key; a burst of 30 distinct images
-cold took 8.6s with 0 failures, and the **identical burst repeated
-immediately after took 94ms total** — the whole point of a shared cache
-being warm rather than each instance re-paying Drive's cost independently.
-
-## Data source + four brands (Oct 2026 cutover) — read before the sections below
-
-**Sales and returns now come from Supabase, not the Google Sheet.**
-[src/lib/oracle.ts](src/lib/oracle.ts) reads `oracle_bill_lines` (sales) and
-`oracle_gr_report` (Goods Return) with `PROJECT_URL`/`ANON_KEY` (same project
-as the stock tables) and hands back rows in the old header-keyed shape, so
-`processor.ts` has one input path. [src/lib/sheets.ts](src/lib/sheets.ts) is
-only the fallback when those env vars are absent; if Supabase is configured and
-fails, the route errors rather than quietly showing stale sheet data.
-
-Rules that came with the data (from the WIP_HEART side):
-- **Price is `SP`** (unit selling price); `BP` is empty on API lines. Revenue = qty × SP.
-- **Never drop a line because `gone_since` is set** — Oracle removed it, but the
-  piece left, so it counts as sold. Older deleted bills were backfilled as
-  `source='dash'`.
-- **`oracle_gr_report` is emptied and reloaded twice a day.** A read under 300
-  rows or under half the last good one keeps the previous figures
-  (`fetchOracleReturns`), instead of reading zero returns.
-- A bill is Bill_No + Bill_Dt + buyer; bill numbers repeat across Oracle's books.
-- Buyer names fold through `party_aliases`, **except** own-people accounts
-  (Prakash Ji, Ankur Ji, Pathak Ji, Kriti, Jyoti, Manoj Ji, Raja Sir): the alias
-  table maps some of them onto real customers (e.g. "prakash ji" → "Dimple
-  Fashion"), which would bury internal dispatches in a customer's revenue.
-- **While sales come from DASH (gowns only), suit and fabric Goods Returns are dropped** (`skipReturnBrands` in `process()`): netted against sales that were never loaded they made 13 customers negative (2,778 pcs / ₹91 L, user-confirmed Nov 2026). Restored automatically with `SALES_SOURCE=supabase`.
-- **Buyer names differing only in capitals/spacing are one buyer** (`process()` folds them to the spelling with most sales lines, sales and returns alike): "Roop Kala" until Mar 2025, "ROOP KALA" after — user-confirmed Nov 2026.
-- **Sub cuts AKE = AK, SGO = SG, LCO = LC** (`SUBCUT_SAME` in processor.ts, user-confirmed Nov 2026). Longer variants (SGOB, AKEBO, LCOV, …) are NOT merged.
-- **Bill dates may spell the month out** ("13/October/26"); `parseOracleDate()` accepts that. Before Nov 2026 it didn't and 5,340 pcs / ₹7.02 Cr sat in totals but in no month.
-- **SALES_SOURCE (Oct 2026): default `dash` — sales come from the whole DASH tab, Supabase ledger not read (owner request, until he says switch). `SALES_SOURCE=supabase` restores ledger + DASH-before-April. Returns still from Supabase.**
-- The ledger starts **1 Apr 2026**. Everything before its first day comes from the
-  **DASH sheet tab** (`fetchOracleHistory()`; `GOOGLE_HISTORY_RANGE`, default `DASH`,
-  `off` to skip) — Jan 2021 onward, 73k rows, names folded through the same aliases,
-  read in parallel with the ledger and kept 1 h (cold read ~15 s, hence
-  `maxDuration = 60`). Stopgap: when the API history is loaded the ledger reaches
-  back further and the DASH rows it now covers drop out by themselves. DASH has no
-  Remarks column and no pre-April Goods Returns, so history is gross, and its
-  non-gown lines (kurti, saree, potli) fall into Labotanica by the default rule.
-- Cached per lambda instance for 5 min (a 17.8k-row read is ~3.5 MB, over the
-  2 MB Next Data Cache limit, same reasoning as sheets.ts).
-
-**Four brands**, decided in `classifyBrand()` in order (user-confirmed Oct 2026):
-1. Item Description contains `GOWN` → `KK` if it starts "KK", else **R-Studio**.
-2. Starts with `SAAR`/`RAAS`, or design prefix **`E-`** → **Unstitched** (suits).
-   "E- is all RAAS" (user). Checked before the remarks test: RAAS lines carry
-   "FABRIC …" remarks that would otherwise read as fabric.
-3. Any other `<letter>-` design prefix (**`P-`** is all Labotanica — user), remarks,
-   or "FABRIC" in the description → **Labotanica** (fabric). `O-` (brocade /
-   Banarsi, 177 lines) was not specified; it stays here as fabric.
-4. Plain 4- or 5-digit design number (1360, "DENVER 1290") → **Unstitched**
-   ("4-digit is SAAR" — user).
-5. Anything else → Labotanica (the PRINTED FABRIC lines, no design). `DUPATTA` →
-   "other" (shown as Unclassified, on purpose).
-
-SAAR and RAAS are **deliberately not split** — the owners asked to see them
-together as Unstitched for now. They are already identifiable if that changes:
-SAAR = plain 4-digit design / "SAARR" description (2,022 lines, ₹2.6 Cr);
-RAAS = `E-` designs (5,703 lines, ₹12.2 Cr). Split in rule 2/4 of classifyBrand.
-
-Labelling for the two new brands (`extractRow`): sub cut = cloth name, the first
-two words of the Item Description minus the SAARR/RAAS word ("CRAPE PURE",
-"SUSHE SILK"); the style keeps its **full design code** ("E-19551G", "1360").
-Do not strip the prefix: 3 fabric codes (9033, 9101, 9124) equal real gown style
-numbers and would mix up stock and photos.
-
-**Trailing `SOLO`, `[NK]` and `[WN]` tags are dropped from a suit/fabric design code**
-(`E-21311B [SOLO]`, `E-21721 SOLO`, `E-22073E [NK] SOLO` → `E-21311B`, `E-21721`,
-`E-22073E`) — the same design billed under a different lot/tag; user-confirmed Oct
-2026 (Oracle's own design filter returns `[SOLO]` with the plain code). Tolerates
-Oracle typos (`[NK[`, `NK]`). Gown codes are untouched (none carry these tags).
-
-**Units are not comparable across brands.** Only "PRINTED FABRIC" (68,777 of
-Labotanica's 76,890 units, ~₹75 each) is clearly metres; gowns and suits count
-pieces/sets. With the brand filter on "All" they are added together.
-
-Customer drill: a "By brand" strip (units · revenue · share, net of returns)
-sits above the sub-cut cards, each card carries a brand tag, and style rows
-show a brand badge when the filter is on All. The strip is not shown in Compare mode.
-
-## Brand split (KK vs R-Studio vs Other/Non-Gown)
-
-**Authoritative classification is server-side and Item-Description-first**:
-`classifyBrand(itemDesc, sn)` in [src/lib/processor.ts](src/lib/processor.ts),
-stored on every row as `RawRow.br`. When `Item Description` is present
-(Oracle's shape), it's ground truth, checked before the style number is
-looked at all:
-- doesn't contain "gown" (SAMPLE, DUPATTA, PENT, FABRIC UNSTICHED SAARI,
-  blanks, …) → **Other / Non-Gown**
-- starts with "KK" (`"KK GOWN"`, `"KK GOWN VELVET"`) → **KK**
-- otherwise (`"GOWN"`, `"GOWN SHIRT"`, `"BELT GOWN"`, …) → **R-Studio**
-
-Only when there's **no** `Item Description` column at all (old-sheet shape)
-does it fall back to the numeric/prefix rule: style **< 50,000** → KK; **≥
-50,000** or `NR-xxx`/`CH-xxx` → R-Studio; anything else → Unclassified.
-
-**This replaced an item-description-blind version of the rule that shipped
-first and was wrong for ~3.9% of real rows.** The numeric threshold was
-originally the *only* signal (built for the old sheet, which had no Item
-Description at all) and looked solid — verified clean against the ~2-month
-live window available at the time (0 disagreements). Once the full Apr
-2021–Sep 2026 history (79,372 rows, the `DASH` tab) was available to check
-against, ~3,100 rows disagreed: almost all a plain `"GOWN"` (R-Studio) item
-whose style number happens to be under 50,000, which the numeric rule alone
-called KK. **Lesson recorded here on purpose**: a small live window verifying
-clean is not proof a rule is correct — Item Description was sitting right
-there the whole time and is unambiguous; the numeric rule should have been
-the fallback from the start, not the primary signal, once real data existed
-to check it against.
-
-**Client code must read `r.br` (via `rowBrand(r)` for a row, `styleBrand(sn)`
-for a style number alone) — there is no client-side re-derivation from `sn`
-anymore.** The old `brandOf(sn)` client function that inferred brand purely
-from the style number's shape has been removed entirely; don't recreate it.
-`styleBrand()` is backed by a `sn → br` lookup built once from `D.raw` (not
-`FILTERED_RAW` — a style's brand doesn't change with the date/brand/qty
-filter), same lazy-cache pattern as `globalStyleMap()`.
-
-At `DASH`-tab scale, `Other`/`Unclassified` are genuinely rare (631 and 6 of
-79,372 rows respectively) — if either climbs meaningfully after a data
-refresh, that's a real signal (a new non-Gown category, or a row with a blank
-Item Description), not noise to ignore.
-
-It's wired in as a value on the **global filter bar** (`BRAND_FILTER`,
-alongside `DATE_FROM`/`FILTER_MIN_QTY`/etc.), not a separate tab — selecting a
-brand narrows `FILTERED_RAW` in `applyGlobalFilter()`, so every tab that goes
-through `getFA()` inherits it for free. `anyGlobalFilterActive()` is the
-shared "is any global filter on" check; `openDrillByName()` uses it to decide
-whether to recompute a customer's sub-cut/style breakdown from `FILTERED_RAW`
-instead of trusting the server's unfiltered `D.drill` — **this same switch was
-already needed for qty/price filters and had never been wired**, so fixing it
-for brand fixed a pre-existing gap for those too.
-
-**Known gap, not fixed by this**: the **Clusters tab** (`renderClusters()`)
-reads `D.customers` / `D.subcuts` / `D.drill` directly and does not go through
-`getFA()` at all — it already ignored date/qty/price filters before brand
-existed, and it ignores brand too. This predates the brand feature; flagged
-here so it isn't mistaken for a bug introduced by it. Making Clusters
-filter-aware means re-deriving its auto-clustering and heatmap from `fa`
-instead of `D`, which is a real (if not huge) separate piece of work.
-
-Two other spots read `D.style_groups` (server, unfiltered) instead of
-`fa.styles` (client, filter-aware) and had the same brand-blind-spot before
-this: the Overview tab's "Styles sold" / "Top Style #" KPI cards, and the
-Insights tab's "Hero Style" card + its AI-prompt builder. Both now derive from
-`fa.styles`. The **sub-cut dropdown** in the Style Numbers tab
-(`document.getElementById('snfilter')`) is deliberately left reading
-`D.style_groups` — it's a one-time population of the *list of possible
-options*, not a data value, so showing all sub-cuts regardless of the active
-brand is harmless (a brand-narrowed tab may just show a dropdown option with
-nothing under it).
-
-## Reorder Radar
-
-Flags customers overdue against **their own** historical ordering rhythm —
-median gap between a customer's distinct order dates, compared to how long
-they've actually been silent — rather than one flat "no order in N days" rule.
-`reorderRadarRows(minOrders)` does the computation; `daysBetween()`,
-`reorderStatus()` (the 3-tier Critical/Watch/On Track split) and
-`renderReorderRadar()` sit next to it.
-
-Two decisions worth knowing if this needs touching:
-
-- **Brand-aware, date-filter-independent.** It respects `BRAND_FILTER` (same
-  `brandOf()` as everywhere else) but always reads full history against
-  today's real date, ignoring `DATE_FROM`/`DATE_TO` — narrowing the window
-  would make the median-gap math meaningless. Said explicitly in the tab's own
-  header text so it doesn't look like a bug when the date filter is active.
-- **Always individual customers, never clustered rows** — the entire point is
-  to catch an account gone quiet inside a cluster whose *blended* average
-  still looks fine (this is real: Seasons Enterprises Pvt. Ltd., 3,087 units /
-  118 orders historically, silent 411 days against a normal 2-day gap, is a
-  Seasons Group member). Cluster membership is shown as a badge annotation
-  instead of being merged away.
-
-Row click reuses the existing Customers-tab machinery rather than building a
-second drill UI: `jumpToCustomer()` switches tabs, sets the search box, then
-calls `handleCustClick()` on the matching row — so lock-mode redaction and the
-drill panel behave identically to clicking a row there directly. Needs the
-`data-cust` attribute on customer rows (`renderCusts()`) to find that row
-after re-render.
-
-Checked and deliberately not built here: discount/margin tracking (orders
-have one price column, no separate MRP; the catalogues' own Price/MRP columns
-are essentially empty) and low-stock flags from the catalogue's "Current
-available" column (that sheet is titled "...to Ecommerce OB" — almost
-certainly web-store stock, not wholesale/factory stock; surfacing it without
-confirming that first would risk being actively misleading).
-
-The specific numbers cited above (Seasons Enterprises, 411 days) were measured
-against the old source sheet, before the Oracle cutover below — illustrative
-of the feature's logic, not current live figures.
-
-## Oracle source + Goods Returns (Sep 2026 cutover)
-
-The orders sheet was replaced outright — not merged — with an export from the
-Oracle billing system, the actual system of record. Spreadsheet
-"ORACLE OUT LIVE": `ORACLE_UPDATED` (sales) and `GOODS_RETURN` (returns) are
-both read via `GOOGLE_SHEET_ID`/`GOOGLE_SHEET_RANGE`/`GOOGLE_RETURNS_RANGE` —
-same service account, same spreadsheet, two tabs. A person keeps this "live"
-tab updated from Oracle until API access exists; Supabase is the plan after
-that, not before — don't build toward it speculatively.
-
-**Update (Sep 2026, second pass)**: the user consolidated and cleaned the full
-history into a new **`DASH`** tab in the same spreadsheet — 79,372 rows,
-Apr 2021 through Sep 2026, superseding `ORACLE_UPDATED` (whose ~2-month
-window is a subset of `DASH`'s range) as the value for `GOOGLE_SHEET_RANGE`.
-Verified end-to-end against the real tab before recommending the cutover:
-`process()` completes without error, dates parse at 99.99% (79,368/79,372),
-`Design` parses with a subcut+dot at 99.07% of rows, and the raw payload
-compresses to ~310KB (brotli) — no scaling concern at this size. The earlier
-`isGownFamily()`/`RawRow.g` design was replaced by `classifyBrand()`/
-`RawRow.br` (see "Brand split" above) specifically because checking the full
-`DASH` history surfaced the numeric-threshold rule's real error rate, which a
-~2-month window couldn't have shown.
-
-**Resolved with the user**: ~3,770 rows (4.7%) have a non-numeric suffix
-after the `Design` field's dot — e.g. `G-SG.16944C` (style `16944` + variant
-`C`), `G-SG.53211[CH224]`. Confirmed: these are **genuinely separate items**
-(colourway variants), not formatting noise — `parseDesign()` correctly keeps
-them verbatim as distinct style numbers (`"16944C"`, not collapsed to
-`"16944"`); no parsing change was needed.
-
-That confirmation did surface a real, separate gap worth fixing: the design
-catalogues almost never photograph a colourway variant under its own suffixed
-code. Measured against the full sales history: of 1,131 distinct suffixed
-styles, only **6** have an exact photo, but **55** more have their *base*
-style (e.g. `56078` for `56078[CH284]`) photographed — a different colourway
-of the same garment. `resolveDesignStyle(sn)` in the template (used by
-`hasDesign()`, `designThumb()`, `openDesign()`) now falls back to the base
-style's photo when the exact variant has none, and marks it clearly as
-approximate — a dashed thumbnail border, a "~" badge, and (in the lightbox) a
-subtitle naming the base style shown. Never silently presents an approximate
-photo as if it were the exact one. Purely client-side (`D._designs` already
-contains the base codes; no server/processor.ts change needed) — the fallback
-just tries the numeric prefix of an unmatched style before giving up.
-
-`Sheet5`'s original, messier shape (20+ `Item Description` categories,
-`Design` formats with no dot, alphanumeric suffixes) is what `DASH` was
-cleaned from — most of that messiness is gone in `DASH`, but the suffix issue
-above is what's left of it.
-
-**Oracle's `Design` column packs sub-cut + style number into one cell** — e.g.
-`G-SGONC.84752` → subcut `SGONC`, style `84752` (confirmed with the user).
-`parseDesign()` in [src/lib/processor.ts](src/lib/processor.ts) does the
-split; `detectColumns()` falls back to it when no dedicated style/subcut
-columns exist, so an old-shape sheet (dedicated columns) still works
-unchanged if this is ever pointed at one again. Both `ORACLE_UPDATED` and
-`GOODS_RETURN` use this format; verified against real data, not assumed.
-
-**Brand comes from `Item Description`, not the style number** — see "Brand
-split" above for the full story of how this rule was corrected once the full
-history was available to check it against.
-
-**Oracle dates are `DD/Mon/YY` *and* `DD-Mon-YY`** — both separators occur
-within the same sheet (confirmed: ~700/2244 rows in one snapshot used
-hyphens). `parseOracleDate()` handles both; `parseDate()` tries it before the
-original numeric-format patterns, which stay in place for compatibility.
-
-**Goods Returns net dashboard-wide**, not just in a separate view — confirmed
-with the user. Netting happens in two places that must stay in sync:
-- Server, [src/lib/processor.ts](src/lib/processor.ts): the same accumulators
-  the sales loop builds (`subcutAcc`/`custAcc`/`styleAcc`/`drill`/totals) get
-  return rows subtracted from them in a second pass, keyed by style number
-  (and customer, for the customer/drill accumulators) — not by exact bill
-  match.
-- Client, `getFA()` in the template: re-runs the same subtraction over
-  `FILTERED_RETURNS` (a sibling to `FILTERED_RAW`, filtered by the same
-  `passesGlobalFilter()`), so a filter (date, brand, qty, price) doesn't
-  silently revert figures to gross. `openDrillByName()`'s filtered-recompute
-  path does the same for the one customer/cluster being drilled into.
-
-**Why returns aren't merged into `raw` as negative-quantity rows**: `parseQty()`
-clamps anything ≤0 to zero, and dozens of places in the ~2,700-line template
-assume `r.q` is positive (filters, percentages, display). Retrofitting
-negative quantities into the one array everything already trusts would risk
-breaking things far from the change. `returns_raw` is a same-shaped sibling
-array instead (positive quantities), and every net figure is produced by
-explicit subtraction, not by mixing sign-flipped rows into `raw`.
-
-**Aggregate netting, not exact-bill-match** — confirmed with the user. Most
-Goods Return bill numbers don't resolve to a sale in whatever window is
-currently loaded (a return can reference a sale from before that window), so
-matching would silently drop most returns. With `DASH` as the sales source
-this matters much less — `GOODS_RETURN`'s own date range sits comfortably
-inside `DASH`'s — but the aggregate-netting design stays regardless: a net
-total **can still go negative** for a customer/style with no matching sale in
-the loaded data, left as-is deliberately, since clamping to zero would hide a
-real data gap instead of surfacing it.
-
-**Returns deliberately never touch**: `.dates`/`freq` accumulators anywhere
-(a return isn't a reorder), `monthlyAcc`/`moA` (a return isn't dispatch
-activity), and **Reorder Radar's cadence math** (`reorderRadarRows()` only
-ever reads `D.raw` — no code changes were needed there, it's naturally
-unaffected).
+**Reorder Radar** — flags customers overdue against **their own** rhythm (median
+gap between distinct order dates vs days silent). `reorderRadarRows()`,
+`daysBetween()`, `reorderStatus()` (Critical / Watch / On Track). Respects brand,
+**ignores the date filter** (always full history vs today — said in the tab
+header). Always individual customers, never clusters (cluster membership is a
+badge) — the point is catching one account gone quiet inside a healthy cluster.
+Row click → `jumpToCustomer()` → `handleCustClick()` (needs `data-cust` on
+customer rows).
 
 **Returns tab** (`renderReturns()`, `returnsAnalysis()`, `returnsGross()`,
-`exportReturnsCSV()`). Unlike Reorder Radar, this tab respects the date filter
-— there's no cadence math here that narrowing the window would break.
-`GOODS_RETURN` has no reason/cause column, so there's no by-reason breakdown;
-don't add one without a real column to back it.
+`exportReturnsCSV()`) — respects the date filter. **Rate-first**: every row is
+`returned ÷ (gross sold + returned)` on its own matched denominator. `retRate()`
+returns null (shown "—") when nothing was dispatched. Min-units guard
+(`returns-minvol`, default 25) demotes and greys, never hides. Clustered view
+maps both sides of the ratio (`retCustKeyFn()`). KPIs ignore the search box;
+tables obey it. Inline drills (`retOpenDrill()`): customer → their returned
+styles; style → who returned it + concentration read. Lock-gated, names via
+`buyerLabel()`, styles carry `designThumb()`. No reason breakdown (no column).
 
-Everything on it is **rate-first**, not volume-first: absolute returned units
-just rank whatever sells most, so every row (customer, style, sub cut, and
-both drill-downs) carries `returned ÷ (gross sold + returned)` against its
-*own* matched denominator. `returnsGross()` builds those denominators —
-per-customer, per-style, per-sub-cut and per customer+style pair — from the
-same filtered sales rows, cached on the `_FA` object so `applyGlobalFilter()`
-clearing `_FA` invalidates it for free. `retRate()` returns **null**, not 0,
-when nothing was dispatched (undefined ≠ zero), and every display path renders
-that as "—".
+**Stock on hand** ([src/lib/stock.ts](src/lib/stock.ts), template `stockOf()` /
+`stockCell()`) — R-Studio from `stock_available` filtered to `brand = R_STUDIO`
+(that view also lists KK styles in production with 0 on hand — 41 styles showed
+wrongly as 0 in Oct 2026), KK from `kk_stock_available`. Missing = "—", never 0.
+Only styles that appear in orders are sent. Off without Supabase env; never
+breaks the page.
 
-Three things that are deliberate and easy to undo by accident:
+**Mobile** — all in the template's "SMALL SCREENS" block; nothing applies above
+900px. ≤900px the tab strip is the sticky bar; ≤640px phone layout. Every wide
+table scrolls sideways (`.tbl-scroll`; `#drill-style-table` scrolls itself) —
+never `overflow:hidden` around a table. Touch screens get 16px inputs (iOS
+zoom). The Next page is `h-dvh`, not `h-screen`.
 
-- **The min-units guard** (`returns-minvol`, default 25) never *hides* a row —
-  rate sorting demotes sub-threshold rows to the bottom and greys them. One
-  return out of one sale is real, just not a signal.
-- **Clustered view maps both sides of the ratio.** `retCustKeyFn()` is applied
-  in `returnsGross()` and `returnsAnalysis()` alike, so a cluster's returns are
-  never divided by one member's sales.
-- **KPIs ignore the search box; tables obey it.** A searched numerator over a
-  full denominator is a meaningless rate, so `renderReturns()` recomputes an
-  unsearched `T` for the four KPI cards and labels the row count as matching.
-  Per-row rates are unaffected — each divides by its own key's gross.
+---
 
-Drill-downs are inline expanding rows (`retOpenDrill()` / `retCloseDrill()`),
-not the Customers tab's drill panel: a customer row expands to their returned
-styles with **their own** rate on each, a style row expands to who sent it back
-plus a concentration read (one account vs. spread across buyers — the latter
-points at the garment, the former at the relationship). Customer drills go
-through the same lock gate as `handleCustClick()`; names always render via
-`buyerLabel()`. Style rows and drills carry `designThumb()` so a quality
-problem is visible.
+## 8. Design thumbnails
 
-Checked and deliberately **not** built: return **lag** (`GOODS_RETURN` has no
-link back to the original bill, so any dispatch→return gap would be an inferred
-match against the customer's most recent sale of that style, not a fact) and a
-monthly returns **trend**. Both are reasonable next additions; neither is
-implemented.
+Off unless `GOOGLE_DESIGNS_SHEET_ID` is set (comma-separated list — **one
+catalogue per branch**, merged first-source-wins, each detected independently;
+together they cover 97% of ordered styles / 99% of units, either alone a third to
+two thirds). Catalogue `Item Code` joins orders' style number; links are direct
+file links. Column detection is evidence-based (sheets have a populated `Image`
+column *and* an empty `Photo` column with duplicate/blank headers). Designs may
+live under a different service account (`buildDesignsAuth()` falls back to the
+main one).
 
-**Void/cancellation rows are dropped before anything else touches them.**
-Found while investigating a report of "26k pieces sold" under an unexplained
-customer: `EXCLUDED_BUYERS` in [src/lib/processor.ts](src/lib/processor.ts)
-— currently just `"CHANGE BARCODE"` — filters both `rows` and `returnRows`
-immediately after column detection, before the main aggregation loop or
-`raw`/`returns_raw` construction ever see them. Confirmed with the user:
-these are barcode cancellations filed under a fake party name, not real
-sales — 967 rows, 970 units, ₹2.2 crore in "revenue" at normal per-unit
-prices (this was not a token/placeholder pattern; most rows had completely
-plausible prices, which is what made it worth a real question rather than an
-assumption). Must never surface anywhere — not totals, not as a customer, not
-in any tab — so exclusion happens at ingestion, not filtered per-view. Add
-further confirmed void-markers to the same set, not ad hoc per feature.
+- **Opaque-origin iframe**: relative URLs don't resolve and the session cookie
+  isn't sent, so `/api/design` is authorised by an HMAC token
+  ([src/lib/signing.ts](src/lib/signing.ts)) in `DATA._design_token`, with the
+  absolute origin in `DATA._design_base`. Any future in-template URL hits this.
+- `DATA._designs` is only the list of styles that have an image.
+- Client: `designThumb(sn, 'sm'|'md')`, `openDesign(sn)` (lightbox `#dz`, shows
+  cached thumb at once, fades in the w1200 photo, then checks `?list=1` for
+  siblings). `resolveDesignStyle()` falls back to the **base style's** photo for
+  an unphotographed colourway (`56078[CH284]` → `56078`), always marked as
+  approximate (dashed border, "~" badge, lightbox subtitle). Designs are **not**
+  redacted by the lock (see stylesheet note).
+- Every failure degrades to "no thumbnail", never an error. A one-off "Could not
+  load this design" that clears on retry is a Drive blip; `dzFail()` auto-retries
+  once (800 ms, cache-busted) then offers Retry. The *same* style failing
+  repeatedly = a real sharing problem.
 
-**Sanity-check outlier rows before trusting a big number.** The "26k pieces"
-report traced to two single rows (Quantity 5,609 and 20,449) with every other
-field blank — almost certainly a value pasted into the wrong column, not a
-real bulk sale. Compare against a **real** bulk order found in the same
-sweep: 7 rows, 21–47 units each, all tied to one real customer with real
-style codes and real prices — clearly legitimate wholesale volume, left
-alone. The distinguishing signal was never the quantity alone; it was
-whether the row had anything else recognisable in it. The two bad rows were
-fixed at the source by the user during this investigation, not by any code
-change here.
+**Speed decisions (don't regress):**
+- `fetchImageBytes()` tries Drive's public thumbnail endpoint first — every
+  sampled image is shared "anyone with the link" (the catalogues feed a public
+  storefront); non-public files reliably fail there, so falling through to the
+  authenticated path is safe.
+- `fetchDesignMap()`, image bytes and folder listings use `unstable_cache` (Vercel
+  Data Cache, cluster-wide), not module variables. Bytes stored base64 (verified
+  byte-identical). Compute functions **throw** on failure so a failure is never
+  cached; the exported wrappers catch.
+- **`googleapis` loads on demand only** (`loadGoogleApis()`; JWT from
+  `google-auth-library`). Bundled it was 11.5 MB of a 14 MB cold start. **Never add
+  a top-level `import { google } from "googleapis"`.**
+- Design token is **stable**: `getStableDesignToken()` lives 30 days, reused 25
+  days; `/api/design` sends `private, max-age=2160000, immutable`. A fresh token
+  per page load made every image URL new and defeated the browser cache.
+  Long-lived is fine — the images are already link-shared.
+- Drive caches use `revalidate: false` (photos never change in place; a new photo
+  = new file ID). `?refreshImages=1` → `clearDriveCache()` is the escape hatch,
+  deliberately not tied to `?refresh=1`.
+- Token-signed image responses get `Vercel-CDN-Cache-Control` (`cdnHeaders()`);
+  cookie-authorised ones are never edge-cached.
+- Measured: 60 concurrent thumbnails ~8 s / 3 failures → ~2.7 s / 0; a warm
+  repeat of a 30-image burst 94 ms.
 
-## Financial year (Nov 2026)
+---
 
-Every "year" on the dashboard is the Indian financial year, 1 Apr – 31 Mar,
-keyed `FY25-26` (`fyKey()`, `fyRange()`, `FY_MONTHS` = Apr→Mar in the template).
-The quick date buttons (`renderFyQuick()`), Compare mode (`cmpCoverage()` is keyed
-by FY; month chips and charts run Apr→Mar) and the customer drill all use it.
-The customer drill's **Month on month** panel (`renderDrillMonths()`) puts the
-customer's FYs side by side Apr→Mar (default: their latest two; chips to pick,
-All / Last 2, Revenue / Units). Dispatched, before returns; From/To ignored there.
-A month with no data yet in an FY shows "—", not 0, and an unfinished FY is
-compared on the same months only.
-The same panel (`renderFyMonths()`, one shared renderer; picked years per panel in
-`_fyMM`) also opens for a **sub cut**: inside the customer drill when a sub-cut card
-is clicked (that customer only; a style picker, or click a style number, narrows to
-one style) and on the Sub Cuts tab by clicking a row (all customers; hidden when locked). `npm test` runs `tests/template.test.mjs`, which
-pulls these functions out of the template by name and tests them.
+## 9. Known gaps / deliberately not built
 
-## Overview chart + Compare mode
+- **Clusters tab** (`renderClusters()`) reads `D.*` directly, not `getFA()` — it
+  ignores every global filter. Making it filter-aware means re-deriving its
+  clustering/heatmap from `fa`.
+- Style Numbers' sub-cut dropdown lists all sub cuts from `D.style_groups`
+  regardless of brand — harmless, deliberate.
+- Clustered drill `freq` is a sum across members (approximate); clustered price
+  is the max seen.
+- Not built: return **lag** (no link from return to original bill), monthly
+  returns **trend**, discount/margin (one price column), low-stock flags from the
+  catalogue's "Current available" (likely web-store stock, unconfirmed).
 
-**Monthly chart** is `drawBarLine()`: HTML bars (units dispatched) plus an SVG
-revenue line on its own right-hand scale — plain HTML bars rather than the old
-stretched SVG so labels never distort. Monthly figures are dispatch activity,
-so gross of returns (same rule as `getFA()`'s `monthly`, which now carries `r`).
-`animateGrow()` grows bars from zero on render and again on `switchTab('overview')`.
+---
 
-**Compare mode** (`⇄ Compare` on the filter bar, `CMP` state, `#cmp-bar`):
-full years side by side, or picked months compared across picked years. Works
-on Overview, Style Numbers and the Customers drill-down; every other tab shows
-a `.cmp-na` banner saying it's the normal view. Decisions worth keeping:
+## 10. Working notes
 
-- **The compare picks are the dates** — `getCMP()` filters with
-  `passesNonDateFilter()` (brand/qty/MRP only), so From/To is ignored and the
-  bar says so. Figures net of returns, same as the normal views.
-- **Partial years are flagged, never silently compared** — `cmpCoverage()`
-  knows which months each year actually has; a partial year gets a `*` and a
-  warning with a one-click "compare the same months only".
-- **Rank by the total across compared years**, and a style qualifies for the
-  min-units threshold in *any* year — so something that collapsed this year
-  shows as a drop instead of vanishing.
-- `getCMP()` is cached on the `_FA` object (keyed on the picks), same
-  invalidation trick as `returnsGross()`. Measured at 79k synthetic rows:
-  rebuild + re-render on a year toggle ≈ 40ms; Style Numbers compare HTML is no
-  larger than the normal view's.
-- Compare-mode style rows have **no click-through** to the style→buyer drill:
-  that drill reads the date-filtered rows and would disagree with the compared
-  years.
-- Drill cards use `.cmp-track`, not `.bar-track` — the locked-mode CSS hides
-  every `.bar-track`, which would blank the one revealed customer in customer
-  mode.
-
-**Style Numbers re-render** (`renderSG()`) keeps expanded groups open and
-re-applies the Sub Cut dropdown + search afterwards. It used to rebuild
-everything collapsed, which made the Sort dropdown look broken and silently
-dropped an active sub-cut filter.
-
-## Mobile layout (Oct 2026)
-
-All in the template's "SMALL SCREENS" block at the end of the stylesheet;
-nothing in it applies above 900px, and desktop was verified element-for-element
-unchanged. Breakpoints: **≤900px** the tab strip (`.nav`) becomes the sticky bar
-instead of the header; **≤640px** phone layout (header on a 2-row grid, KPI value
-sized with `clamp()` so two cards fit a row, sub-cut group stats wrap, drill
-cards 2-up, lock dialog full-width and high so the keyboard can't cover it).
-
-- **Filter bar folds on phones** behind `#gf-toggle`, with `#gf-summary`
-  (`renderFilterSummary()`) saying what's active. On desktop its wrappers
-  (`.gf-body/.gf-grp/.gf-field`) are `display:contents`, so the controls are
-  still one flat flex row — keep it that way or the desktop bar changes.
-- **Every wide table scrolls sideways, never clips.** A table in a card that
-  also holds a title goes in a `.tbl-scroll` div; `#drill-style-table` scrolls
-  itself. Don't put `overflow:hidden` on a box around a table (it used to cut
-  off the Reorder and Returns tables, and 20px of Returns even on desktop).
-- **Touch screens get 16px inputs** (`@media (pointer:coarse)`): iOS zooms into
-  any smaller input and never zooms back out.
-- `drawBarLine()` thins month labels to the plot width; `switchTab('overview')`
-  and a width-only `resize` listener redraw it, since a chart drawn while its
-  tab was hidden has no width to measure.
-- The Next page is `h-dvh`, not `h-screen`: on phones `100vh` ran the bottom of
-  the iframe behind the browser toolbar.
-
-## Customer clusters
-
-[src/lib/clusters.ts](src/lib/clusters.ts) hand-maps duplicate/related customer
-names (same buyer under several sheet spellings, or a group of sister firms) to
-one display name. Matching is case-insensitive and trimmed. Adding a group =
-edit the array, commit, push; Vercel redeploys.
-
-This is why several dashboard views have a "clustered" toggle (`CUST_VIEW`) and
-why some analyses should note when two rows are really one buyer.
-
-**Re-audit this against Oracle's naming after the cutover above** — Oracle
-doesn't necessarily spell a customer the same way the old sheet did. One
-confirmed addition already made: `FRONTIER CLOTTH HOUSE PVT.LTD` → Frontier
-Raas Group (the shared word "FRONTIER" is distinctive enough in this customer
-list to trust). Several other Oracle names share only generic words with
-existing clusters (e.g. "fashion", "house") — deliberately **not** merged
-without confirmation, since a wrong merge misrepresents a real business
-relationship. `DASH` (see "Oracle source" above) has 70 distinct buyer names,
-the full historical set — worth a proper cluster-list audit against it before
-relying on the Clustered customer view for anything from before Sep 2026.
-
-## Working notes
-
-- `npm run dev` / `npm run build` / `npm run lint`. Lint does **not** cover the
-  template — syntax-check inline scripts manually when editing it, e.g.
-  extract `<script>` bodies and run them through `new Function(...)` in node.
-- The template's CSS uses `--accent: #b5622a` (terracotta) with a warm stone
-  palette and `Syne` / `IBM Plex Mono` fonts. Match it; no framework in there.
-- Vercel-hosted; env vars are configured there
-  (see [SETUP.md](SETUP.md) for the full list).
-- Sheet columns are matched by fuzzy header names in the `NEEDED` alias map
-  ([src/lib/processor.ts](src/lib/processor.ts)) — add an alias rather than
-  requiring the sheet to be renamed.
+- `npm run dev` / `npm run build` / `npm run lint` / `npm test`. `npm test` runs
+  `tests/template.test.mjs`, which extracts template functions by name (FY / month
+  panel logic) and tests them.
+- Lint doesn't cover the template — syntax-check inline scripts after editing
+  (extract `<script>` bodies, run through `new Function(...)` in node).
+- **Checking live data**: write a throwaway `.mts` script in the scratchpad that
+  loads `.env.local`, imports `src/lib/sheets.ts` / `oracle.ts` / `processor.ts`
+  via `file:///C:/...` URLs, and run it with `npx -y tsx`. Only summaries come
+  back — the sheet itself never enters the conversation.
+- `.env.local` is git-ignored; Vercel's env must be changed separately (the owner
+  does that).
+- Windows Git Bash has no tz database: `TZ=Asia/Kolkata date` prints UTC labelled
+  GMT — add 5:30.
+- Measure before claiming; report with a real bill / style / customer the owner
+  can look up.

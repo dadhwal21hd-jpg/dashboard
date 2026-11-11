@@ -6,6 +6,7 @@ import { brotliCompress, gzip, constants as zlibConstants } from "node:zlib";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { fetchSheetRows, fetchReturnsRows } from "@/lib/sheets";
+import { foldPartyAliases } from "@/lib/oracle";
 import { process as runProcessor } from "@/lib/processor";
 import { fetchDesignMap, designsConfigured } from "@/lib/designs";
 import { getStableDesignToken } from "@/lib/signing";
@@ -46,11 +47,15 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Force the app to use Google Sheets instead of Supabase
-    const sales = fetchSheetRows(force);
-    const [{ rows, fetchedAt, fromCache }, { rows: returnRows }] = await Promise.all([
-      sales,
-      fetchReturnsRows(force) // ALWAYS uses the Google Sheet for returns now
+    // Sales and returns both come from the Google Sheet (owner's call, Nov 2026).
+    // Buyer spellings are still merged through Supabase's party_aliases.
+    const [{ rows: salesRows, fetchedAt, fromCache }, { rows: retRows }] = await Promise.all([
+      fetchSheetRows(force),
+      fetchReturnsRows(force),
+    ]);
+    const [rows, returnRows] = await Promise.all([
+      foldPartyAliases(salesRows, force),
+      foldPartyAliases(retRows, force),
     ]);
 
     const data = runProcessor(rows, returnRows, {});
