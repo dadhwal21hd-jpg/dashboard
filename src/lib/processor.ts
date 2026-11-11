@@ -287,7 +287,7 @@ function isExcludedBuyer(name: unknown): boolean {
 export function process(
   rowsIn: SheetRow[],
   returnRowsIn: SheetRow[] = [],
-  opts: { skipReturnBrands?: Brand[] } = {},
+  opts: { skipReturnBrands?: Brand[]; dropBrands?: Brand[] } = {},
 ): DashboardData {
   if (!rowsIn.length) {
     throw new Error("Sheet has no data rows.");
@@ -298,8 +298,11 @@ export function process(
     ? detectColumns(Object.keys(returnRowsIn[0]), "Goods Return sheet")
     : null;
 
-  const skipRet = new Set(opts.skipReturnBrands ?? []);
-  let rows = rowsIn.filter((r) => !isExcludedBuyer(r[colMap.cust]));
+  // dropBrands: gone from sales AND returns, everywhere. skipReturnBrands: returns only.
+  const drop = new Set(opts.dropBrands ?? []);
+  const skipRet = new Set([...(opts.skipReturnBrands ?? []), ...drop]);
+  let rows = rowsIn.filter((r) => !isExcludedBuyer(r[colMap.cust]) &&
+    !(drop.size && drop.has(extractRow(colMap, r).brand)));
   let returnRows = returnsColMap
     ? returnRowsIn.filter((r) => !isExcludedBuyer(r[returnsColMap.cust]) &&
         !(skipRet.size && skipRet.has(extractRow(returnsColMap, r).brand)))

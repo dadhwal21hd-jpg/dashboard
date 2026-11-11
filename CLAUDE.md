@@ -65,6 +65,13 @@ Supabase.** Keep it that way until the owner says otherwise.
 | Stock on hand | Supabase `stock_available`, `kk_stock_available` | same |
 | Design photos | separate catalogue sheets + Drive | `GOOGLE_DESIGNS_*` |
 
+- **Labotanica (fabric) and Unstitched (suits) are switched off** — owner, 11 Nov
+  2026. The route passes `dropBrands: ["labotanica","unstitched"]` to `process()`,
+  which drops those rows from sales *and* returns at ingestion (gone from every
+  total, customer and tab); their brand-filter options are removed from the
+  template. At the time that was 574 + 2 sales rows (1,024 units, ₹49 L) and 62
+  return rows. Their classification rules (§3) stay in place — to bring them
+  back, remove `dropBrands` and restore the two `<option>`s in `#brand-filter`.
 - **`ORACLE_UPDATED` is ignored** — owner's instruction. It only covers ~Jul 2026
   onward; pointed at it, every return since 2021 was netted against four months
   of sales and 19 customers went negative (measured 11 Nov 2026).

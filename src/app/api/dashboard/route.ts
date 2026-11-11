@@ -58,7 +58,9 @@ export async function GET(req: NextRequest) {
       foldPartyAliases(retRows, force),
     ]);
 
-    const data = runProcessor(rows, returnRows, {});
+    // Fabric (Labotanica) and suits (Unstitched) are off for now — owner, 11 Nov 2026.
+    // Their classification rules stay in classifyBrand(); delete this to bring them back.
+    const data = runProcessor(rows, returnRows, { dropBrands: ["labotanica", "unstitched"] });
 
     const [designMap, stockMap] = await Promise.all([
       fetchDesignMap(force),

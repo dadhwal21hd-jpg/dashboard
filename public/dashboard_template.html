@@ -1041,12 +1041,11 @@ body.cmp-on .cmp-na{display:block;}
     <div class="gf-sep"></div>
 
     <label class="gf-field gf-brand"><span class="filter-label">🏷️ Brand:</span>
-    <select id="brand-filter" onchange="applyGlobalFilter()" title="Item Description: GOWN = R-Studio · KK GOWN = KK. Suits (SAAR 4-digit designs + RAAS E- designs) = Unstitched · fabric (P- designs, printed fabric) = Labotanica">
+    <select id="brand-filter" onchange="applyGlobalFilter()" title="Item Description: GOWN = R-Studio · KK GOWN = KK">
       <option value="all">All Brands</option>
       <option value="kk">KK</option>
       <option value="rstudio">R-Studio</option>
-      <option value="labotanica">Labotanica (Fabric)</option>
-      <option value="unstitched">Unstitched (Suits)</option>
+      <!-- Labotanica (fabric) and Unstitched (suits) are switched off server-side for now; see CLAUDE.md §2 -->
       <option value="other">Unclassified</option>
     </select></label>
 
