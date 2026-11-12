@@ -323,6 +323,13 @@ Partial years are flagged with `*` plus a one-click "same months only"
 min-units in *any* year (so a collapse shows as a drop). No click-through from
 compare style rows (that drill reads date-filtered rows and would disagree).
 Quick FY buttons: `renderFyQuick()`.
+**"Same days to date"** (`CMP.mode = 'sameday'`, owner's ask, 12 Nov 2026): every
+picked FY is cut at 1 Apr → the day of the **latest bill in the data**
+(`cmpLastBill()`, unfiltered), not today's date — days the sheet hasn't caught up
+on would count as zero. Compares like-for-like days, not whole months (cutting by
+month would set 11 days of this Nov against all of last Nov). `fyDayPos()` places
+a date inside its FY; `cmpScopeLabel()` gives the "1 Apr – 11 Nov" text. No
+full-year projection — not asked for.
 
 **Reorder Radar** — flags customers overdue against **their own** rhythm (median
 gap between distinct order dates vs days silent). `reorderRadarRows()`,

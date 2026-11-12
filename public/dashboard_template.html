@@ -2040,6 +2040,7 @@ function fyRange(key) {
   const a = +key.slice(2,4), s = a === 99 ? 1999 : 2000 + a;
   return [`${s}-04-01`, `${s + 1}-03-31`];
 }
+// mode: 'years' (full FYs) | 'sameday' (1 Apr → the latest bill's day, every FY) | 'months' (picked)
 let CMP = { on:false, mode:'years', years:null, months:[] };   // years null = every year in the data
 let _cmpCov = null;
 
@@ -2048,17 +2049,35 @@ let _cmpCov = null;
 function cmpCoverage() {
   if (_cmpCov && _cmpCov.d === D) return _cmpCov.map;
   const map = {};
+  let last = '';
   for (const r of D.raw) {
     const ds = rowDateStr(r); if (!ds) continue;
     const fy = fyKey(ds);
     (map[fy] = map[fy] || new Set()).add(+ds.slice(5,7));
+    if (ds > last) last = ds;
   }
-  _cmpCov = { d:D, map };
+  _cmpCov = { d:D, map, last };
   return map;
 }
+/** Latest bill date in the data ("2026-11-11"), unfiltered — the "same days" cut-off. */
+function cmpLastBill() { cmpCoverage(); return _cmpCov.last || null; }
+/** A date's place inside its FY, comparable across years: 1 Apr → 1, 31 Mar → 1131. */
+function fyDayPos(ds) { return FY_MONTHS.indexOf(+ds.slice(5,7)) * 100 + +ds.slice(8,10); }
+function cmpCutPos() { const l = cmpLastBill(); return CMP.mode === 'sameday' && l ? fyDayPos(l) : null; }
 function cmpAllYears() { return Object.keys(cmpCoverage()).sort(); }
 function cmpYears() { const all = cmpAllYears(); return CMP.years ? all.filter(y => CMP.years.includes(y)) : all; }
-function cmpMonths() { return CMP.mode === 'months' ? FY_MONTHS.filter(m => CMP.months.includes(m)) : [...FY_MONTHS]; }
+function cmpMonths() {
+  if (CMP.mode === 'months') return FY_MONTHS.filter(m => CMP.months.includes(m));
+  if (CMP.mode === 'sameday' && cmpLastBill()) return FY_MONTHS.slice(0, FY_MONTHS.indexOf(+cmpLastBill().slice(5,7)) + 1);
+  return [...FY_MONTHS];
+}
+/** "1 Apr – 11 Nov" / "Apr–Jun" / "" (full FYs) — for the notes under each compare view. */
+function cmpScopeLabel() {
+  if (CMP.mode === 'months') return monthsLabel(CMP.months);
+  const l = cmpLastBill();
+  if (CMP.mode === 'sameday' && l) return `1 Apr – ${+l.slice(8,10)} ${MONTHS_SHORT[+l.slice(5,7)-1]}`;
+  return '';
+}
 
 /** "Apr–Jun, Dec–Mar" from [4,5,6,12,1,2,3] — read in financial-year order. */
 function monthsLabel(ms) {
@@ -2091,7 +2110,8 @@ function cmpPeriods() {
 function getCMP() {
   const fa = getFA();
   const base = cmpPeriods(), months = cmpMonths();
-  const key = JSON.stringify([base.map(p => p.key), months]);
+  const cut = cmpCutPos();
+  const key = JSON.stringify([base.map(p => p.key), months, cut]);
   if (fa._cmp && fa._cmp.key === key) return fa._cmp;
 
   const idx = {}; base.forEach((p, i) => { idx[p.key] = i; });
@@ -2101,6 +2121,7 @@ function getCMP() {
     const ds = rowDateStr(r); if (!ds) return null;
     const i = idx[fyKey(ds)]; if (i === undefined) return null;
     const m = +ds.slice(5,7); if (!mset.has(m)) return null;
+    if (cut !== null && fyDayPos(ds) > cut) return null;   // same days: past the cut-off day
     return { p:P[i], m };
   };
   const bump = (p, r, sign, L) => {
@@ -2131,7 +2152,7 @@ function getCMP() {
     if (!r.c || !r.sc || !r.sn || !passesNonDateFilter(r)) continue;
     const L = locate(r); if (L) bump(L.p, r, -1, L);
   }
-  fa._cmp = { key, periods:P, months };
+  fa._cmp = { key, periods:P, months, cutDay: cut !== null ? cut % 100 : null };
   return fa._cmp;
 }
 
@@ -2179,7 +2200,6 @@ function cmpPreset(which) {
   else if (which === 'last2') CMP.years = cmpAllYears().slice(-2);
   else if (which === 'allmonths') CMP.months = [1,2,3,4,5,6,7,8,9,10,11,12];
   else if (which === 'ytd') { const ys = cmpAllYears(); CMP.months = ys.length ? [...cmpCoverage()[ys[ys.length-1]]] : CMP.months; }
-  else if (which === 'sameMonths') { CMP.mode = 'months'; const ys = cmpYears(); CMP.months = [...cmpCoverage()[ys[ys.length-1]]]; }
   onCompareChange();
 }
 function renderCmpBar() {
@@ -2198,19 +2218,20 @@ function renderCmpBar() {
   const partial = P.filter(p => p.partial);
   const newest = P[P.length-1];
   const warn = partial.length
-    ? `<span class="cmp-warn">⚠ ${partial.map(p => `${p.label} only has ${p.have.length ? monthsLabel(p.have) : 'no data'}`).join(' · ')}${CMP.mode === 'years' && newest && newest.partial && newest.have.length ? ` — <a href="#" onclick="cmpPreset('sameMonths');return false">compare ${monthsLabel(newest.have)} only</a>` : ''}</span>`
+    ? `<span class="cmp-warn">⚠ ${partial.map(p => `${p.label} only has ${p.have.length ? monthsLabel(p.have) : 'no data'}`).join(' · ')}${CMP.mode === 'years' && newest && newest.partial && newest.have.length && newest.key === fyKey(cmpLastBill()) ? ` — <a href="#" onclick="cmpSetMode('sameday');return false">compare every year up to the same day only</a>` : ''}</span>`
     : '';
   bar.innerHTML = `
     <span style="font-family:'Syne',sans-serif;font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px">⇄ Compare</span>
     <div class="cmp-grp">
       <span class="cmp-chip mo${CMP.mode === 'years' ? ' on' : ''}" onclick="cmpSetMode('years')">Full FYs</span>
+      <span class="cmp-chip mo${CMP.mode === 'sameday' ? ' on' : ''}" onclick="cmpSetMode('sameday')" title="Every year cut at the same day as the latest bill">Same days to date</span>
       <span class="cmp-chip mo${CMP.mode === 'months' ? ' on' : ''}" onclick="cmpSetMode('months')">Pick months</span>
     </div>
     <div class="cmp-grp"><span class="filter-label">Financial years:</span>${yearChips}
       <span class="cmp-chip link" onclick="cmpPreset('allyears')">All</span><span class="cmp-chip link" onclick="cmpPreset('last2')">Last 2</span></div>
     ${monthChips}
     ${warn}
-    <div class="cmp-note">Comparing ${sel.join(' vs ')}${CMP.mode === 'months' ? ` · ${monthsLabel(CMP.months)} of each FY` : ' (Apr–Mar)'}. The From/To dates above are ignored while comparing — brand, qty and MRP filters still apply. Units and revenue are net of returns; the monthly chart shows dispatches. <a href="#" onclick="toggleCompare();return false">Exit compare</a></div>`;
+    <div class="cmp-note">Comparing ${sel.join(' vs ')}${CMP.mode === 'months' ? ` · ${monthsLabel(CMP.months)} of each FY` : CMP.mode === 'sameday' ? ` · <b>${cmpScopeLabel()}</b> of each FY — up to the day of the latest bill`: ' (Apr–Mar)'}. The From/To dates above are ignored while comparing — brand, qty and MRP filters still apply. Units and revenue are net of returns; the monthly chart shows dispatches. <a href="#" onclick="toggleCompare();return false">Exit compare</a></div>`;
 }
 function onCompareChange() {
   renderCmpBar();
@@ -2232,7 +2253,7 @@ function drawCmpBars(id, C) {
   const cols = months.map((m, i) => `<div class="bl-col" data-i="${i}"><div class="bl-grp">${P.map(p =>
       `<div class="bl-bar" style="background:${p.color}" data-h="${((p.monthly[m]?.q || 0) / maxQ * 100).toFixed(2)}"></div>`).join('')}</div></div>`).join('');
   const labels = months.map((m, i) => `<span class="bl-xl" style="left:${((i+0.5)/n)*100}%">${MONTHS_SHORT[m-1]}</span>`).join('');
-  el.innerHTML = `<div class="bl-legend">${P.map(p => `<span><i class="sw" style="background:${p.color}"></i>${cmpYearTag(p)}</span>`).join('')}<span>units dispatched per month</span></div>
+  el.innerHTML = `<div class="bl-legend">${P.map(p => `<span><i class="sw" style="background:${p.color}"></i>${cmpYearTag(p)}</span>`).join('')}<span>units dispatched per month${C.cutDay ? ` · ${MONTHS_SHORT[months[n-1]-1]} = 1–${C.cutDay} only, every year` : ''}</span></div>
     <div class="bl-plot">${grid}<div class="bl-cols">${cols}</div><div class="bl-tip" hidden></div></div>
     <div class="bl-xaxis">${labels}</div>`;
   wireChartTip(el, n, i => {
@@ -2394,7 +2415,7 @@ function renderSGCompare(sort, threshold) {
 
   const count = gl.reduce((t, g) => t + g.styles.length, 0);
   document.getElementById('sn-count-sub').textContent =
-    `Comparing ${P.map(p => p.label).join(' vs ')}${CMP.mode === 'months' ? ` (${monthsLabel(C.months)})` : ''} · ${count} styles with qty > ${threshold} in at least one year. Click any group to expand.`;
+    `Comparing ${P.map(p => p.label).join(' vs ')}${cmpScopeLabel() ? ` (${cmpScopeLabel()})` : ''} ·${count} styles with qty > ${threshold} in at least one year. Click any group to expand.`;
 
   _SG_BODIES = []; _SG_STYLES = [];
   document.getElementById('sg-container').innerHTML = gl.map((g, gi) => {
@@ -2989,7 +3010,7 @@ function openDrillCompare(custName, rowEl) {
 
   document.getElementById('drill-cust-name').textContent = custName;
   document.getElementById('drill-date-label').textContent =
-    `(comparing ${P.map(p => p.label).join(' vs ')}${CMP.mode === 'months' ? ` · ${monthsLabel(C.months)}` : ''})`;
+    `(comparing ${P.map(p => p.label).join(' vs ')}${cmpScopeLabel() ? ` · ${cmpScopeLabel()}` : ''})`;
   document.getElementById('drill-styles').style.display = 'none';
 
   const entries = Object.entries(subs).filter(([sc]) => sc)
@@ -3006,7 +3027,7 @@ function openDrillCompare(custName, rowEl) {
       ${P.map((p, i) => `<div class="cmp-mini"><span class="cmp-mini-y" style="color:${p.color}">${esc(p.label.slice(2))}</span><div class="cmp-track"><i style="width:${(Math.max(s.v[i].qty,0)/maxQ*100).toFixed(0)}%;background:${p.color}"></i></div><span class="cmp-mini-v">${fN(s.v[i].qty)}</span></div>`).join('')}
       <div style="font-size:9px;color:var(--text3);margin-top:4px;font-family:'IBM Plex Mono',monospace">tap → style numbers</div>
     </div>`;
-  }).join('') : `<div style="grid-column:1/-1;font-size:12px;color:var(--text3);padding:8px 0">No orders from this customer in ${P.map(p => p.label).join(', ')}${CMP.mode === 'months' ? ` (${monthsLabel(C.months)})` : ''}.</div>`;
+  }).join('') : `<div style="grid-column:1/-1;font-size:12px;color:var(--text3);padding:8px 0">No orders from this customer in ${P.map(p => p.label).join(', ')}${cmpScopeLabel() ? ` (${cmpScopeLabel()})` : ''}.</div>`;
 
   // Month on month here too, starting on the financial years being compared.
   window._drillMembers = new Set(members);
