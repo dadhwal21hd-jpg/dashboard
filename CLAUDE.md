@@ -328,8 +328,10 @@ picked FY is cut at 1 Apr → the day of the **latest bill in the data**
 (`cmpLastBill()`, unfiltered), not today's date — days the sheet hasn't caught up
 on would count as zero. Compares like-for-like days, not whole months (cutting by
 month would set 11 days of this Nov against all of last Nov). `fyDayPos()` places
-a date inside its FY; `cmpScopeLabel()` gives the "1 Apr – 11 Nov" text. No
-full-year projection — not asked for.
+a date inside its FY; `cmpScopeLabel()` gives the "1 Apr – 11 Nov" text. The
+month-on-month panels follow it too (`fyMonthly()` drops days past the cut-off
+via `cmpCutPos()`, the table shows only Apr → the cut-off month, last month
+marked "1–11") — only while Compare is on. No full-year projection — not asked for.
 
 **Reorder Radar** — flags customers overdue against **their own** rhythm (median
 gap between distinct order dates vs days silent). `reorderRadarRows()`,

@@ -2063,7 +2063,10 @@ function cmpCoverage() {
 function cmpLastBill() { cmpCoverage(); return _cmpCov.last || null; }
 /** A date's place inside its FY, comparable across years: 1 Apr → 1, 31 Mar → 1131. */
 function fyDayPos(ds) { return FY_MONTHS.indexOf(+ds.slice(5,7)) * 100 + +ds.slice(8,10); }
-function cmpCutPos() { const l = cmpLastBill(); return CMP.mode === 'sameday' && l ? fyDayPos(l) : null; }
+function cmpCutPos() {
+  if (!CMP.on || CMP.mode !== 'sameday') return null;
+  const l = cmpLastBill(); return l ? fyDayPos(l) : null;
+}
 function cmpAllYears() { return Object.keys(cmpCoverage()).sort(); }
 function cmpYears() { const all = cmpAllYears(); return CMP.years ? all.filter(y => CMP.years.includes(y)) : all; }
 function cmpMonths() {
@@ -3178,10 +3181,11 @@ function renderDrillBrands() {
  *  { "FY25-26": { 4: {q, rev}, ... } }. Gross — dispatch activity, same rule
  *  as the monthly charts; returns are not dispatch months. */
 function fyMonthly(rows, keep) {
-  const acc = {};
+  const acc = {}, cut = cmpCutPos();   // Compare "Same days to date": drop days past the cut-off
   for (const r of rows) {
     if (!keep(r)) continue;
     const ds = rowDateStr(r); if (!ds) continue;
+    if (cut !== null && fyDayPos(ds) > cut) continue;
     const fy = fyKey(ds), m = +ds.slice(5,7);
     const y = acc[fy] || (acc[fy] = {});
     const a = y[m] || (y[m] = { q:0, rev:0 });
@@ -3204,9 +3208,9 @@ function scStyleList(rows) {
  *  the business has no data for yet in that FY — a future month isn't a zero.
  *  delta = newest FY vs the one before it. sameMonthsPrev = the previous FY's
  *  total over only the months the newest FY has, for a fair year-to-date read. */
-function fyCompareRows(acc, fys, cov, metric) {
+function fyCompareRows(acc, fys, cov, metric, months = FY_MONTHS) {
   const n = fys.length;
-  const rows = FY_MONTHS.map(m => {
+  const rows = months.map(m => {
     const v = fys.map(fy => (cov[fy] && cov[fy].has(m)) ? ((acc[fy] && acc[fy][m] && acc[fy][m][metric]) || 0) : null);
     const cur = v[n-1], prev = v[n-2];
     const delta = n > 1 && cur !== null && prev != null && prev > 0 ? (cur - prev) / prev : null;
@@ -3263,7 +3267,9 @@ function renderFyMonths(id, acc, opt) {
   const metric = window._dmMetric === 'q' ? 'q' : 'rev';
   const nowKey = new Date().toISOString().slice(0,7);
   const show = v => v === null ? '<span style="color:var(--text3)">—</span>' : metric === 'q' ? fN(Math.round(v)) : fmt(Math.round(v));
-  const T = fyCompareRows(acc, fys, cmpCoverage(), metric);
+  // Compare "Same days to date": only Apr → the cut-off month, each year cut at the same day.
+  const cut = cmpCutPos(), scope = cut !== null ? cmpScopeLabel() : '';
+  const T = fyCompareRows(acc, fys, cmpCoverage(), metric, cut !== null ? cmpMonths() : FY_MONTHS);
   const n = fys.length, cols = fys.map(cmpYearColor);
   const maxV = Math.max(1, ...T.rows.flatMap(r => r.v.map(x => x || 0)));
   const pctPill = d => d === null ? '<span class="cmp-d flat">—</span>'
@@ -3273,7 +3279,7 @@ function renderFyMonths(id, acc, opt) {
   const th = "padding:6px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);white-space:nowrap";
   const bar = (v, c) => v ? `<div class="cmp-track" style="height:3px;margin-top:3px;background:var(--border);border-radius:2px;overflow:hidden"><i style="display:block;height:100%;width:${(v / maxV * 100).toFixed(0)}%;background:${c}"></i></div>` : '';
   const body = T.rows.map(r => `<tr style="border-top:1px solid var(--border)">
-      <td style="${td};text-align:left">${MONTHS_SHORT[r.m - 1]}</td>
+      <td style="${td};text-align:left">${MONTHS_SHORT[r.m - 1]}${cut !== null && r.m === T.rows[T.rows.length-1].m ? `<span style="color:var(--text3);font-size:10px"> 1–${cut % 100}</span>` : ''}</td>
       ${r.v.map((v, i) => `<td style="${td}"><div>${v === null && fyMonthKey(fys[i], r.m) > nowKey ? '<span style="color:var(--text3);font-size:10px">not yet</span>' : show(v)}</div>${bar(v, cols[i])}</td>`).join('')}
       ${n > 1 ? `<td style="${td}">${pctPill(r.delta)}</td>` : ''}
     </tr>`).join('');
@@ -3305,9 +3311,10 @@ function renderFyMonths(id, acc, opt) {
     ${opt.extra || ''}
     <div class="tbl-scroll"><table style="width:100%;border-collapse:collapse"><thead><tr>
       <th style="${th};text-align:left">Month</th>
-      ${fys.map((fy, i) => `<th style="${th};color:${cols[i]}">${fy}<div style="font-size:8px;letter-spacing:0;text-transform:none;color:var(--text3);font-weight:400">Apr ${fyRange(fy)[0].slice(2,4)} – Mar ${fyRange(fy)[1].slice(2,4)}</div></th>`).join('')}
+      ${fys.map((fy, i) => `<th style="${th};color:${cols[i]}">${fy}<div style="font-size:8px;letter-spacing:0;text-transform:none;color:var(--text3);font-weight:400">${scope ? esc(scope) :`Apr ${fyRange(fy)[0].slice(2,4)} – Mar ${fyRange(fy)[1].slice(2,4)}`}</div></th>`).join('')}
       ${n > 1 ? `<th style="${th}">${esc(newest)} vs ${esc(fys[n-2])}</th>` : ''}
     </tr></thead><tbody>${body}${foot}</tbody></table></div>${ytdLine}
+    ${scope ? `<div style="padding:8px 0 0;font-size:11px;color:var(--text2)">Same days to date: every year counts <b>${esc(scope)}</b> only, up to the day of the latest bill.</div>` : ''}
     <div style="font-size:10px;color:var(--text3);margin-top:6px">Dispatched, before Goods Returns · From/To dates are ignored here (pick the years above); brand, qty and MRP filters apply · Dec under FY25-26 is Dec 2025, under FY26-27 it is Dec 2026</div>`;
 }
 

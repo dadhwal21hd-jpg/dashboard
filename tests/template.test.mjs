@@ -27,8 +27,11 @@ function constSource(name) {
   return m[0];
 }
 
+// fyMonthly asks Compare whether "Same days to date" is cutting the year short.
+const MONTHLY = ["fyMonthly", "cmpCutPos", "cmpLastBill", "cmpCoverage", "fyDayPos", "rowDateStr", "fyKey"];
+
 function load(fns, consts = [], globals = {}) {
-  const ctx = vm.createContext({ ...globals });
+  const ctx = vm.createContext({ CMP: { on: false, mode: "years" }, ...globals });
   vm.runInContext([...consts.map(constSource), ...fns.map(fnSource)].join("\n") +
     `\n;Object.assign(globalThis,{${[...fns, ...consts].join(",")}});`, ctx);
   return ctx;
@@ -87,7 +90,7 @@ const ROWS = [
 ];
 
 test("custFyMonthly buckets one customer's dispatches by FY and month", () => {
-  const { custFyMonthly } = load(["custFyMonthly", "fyMonthly", "rowDateStr", "fyKey"]);
+  const { custFyMonthly } = load(["custFyMonthly", ...MONTHLY]);
   const acc = custFyMonthly(ROWS, new Set(["SHAM"]));
   assert.deepEqual(Object.keys(acc).sort(), ["FY25-26", "FY26-27"]);
   assert.deepEqual({ ...acc["FY25-26"][4] }, { q: 15, rev: 1500 });
@@ -97,13 +100,13 @@ test("custFyMonthly buckets one customer's dispatches by FY and month", () => {
 });
 
 test("custFyMonthly adds up every member of a cluster", () => {
-  const { custFyMonthly } = load(["custFyMonthly", "fyMonthly", "rowDateStr", "fyKey"]);
+  const { custFyMonthly } = load(["custFyMonthly", ...MONTHLY]);
   const acc = custFyMonthly(ROWS, new Set(["SHAM", "OTHER"]));
   assert.deepEqual({ ...acc["FY26-27"][4] }, { q: 27, rev: 2070 });
 });
 
 test("fyCompareRows lines months up Apr→Mar with totals and change", () => {
-  const { custFyMonthly, fyCompareRows } = load(["custFyMonthly", "fyMonthly", "fyCompareRows", "rowDateStr", "fyKey"], ["FY_MONTHS"]);
+  const { custFyMonthly, fyCompareRows } = load(["custFyMonthly", ...MONTHLY, "fyCompareRows"], ["FY_MONTHS"]);
   const acc = custFyMonthly(ROWS, new Set(["SHAM"]));
   // Coverage: FY26-27 only has data up to April so far.
   const cov = { "FY25-26": new Set([4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3]), "FY26-27": new Set([4]) };
@@ -124,7 +127,7 @@ test("fyCompareRows lines months up Apr→Mar with totals and change", () => {
 });
 
 test("fyCompareRows can rank by units", () => {
-  const { custFyMonthly, fyCompareRows } = load(["custFyMonthly", "fyMonthly", "fyCompareRows", "rowDateStr", "fyKey"], ["FY_MONTHS"]);
+  const { custFyMonthly, fyCompareRows } = load(["custFyMonthly", ...MONTHLY, "fyCompareRows"], ["FY_MONTHS"]);
   const acc = custFyMonthly(ROWS, new Set(["SHAM"]));
   const cov = { "FY25-26": new Set([4, 3]), "FY26-27": new Set([4]) };
   const T = fyCompareRows(acc, ["FY25-26", "FY26-27"], cov, "q");
@@ -133,7 +136,7 @@ test("fyCompareRows can rank by units", () => {
 });
 
 test("fyCompareRows with one FY has no change column", () => {
-  const { custFyMonthly, fyCompareRows } = load(["custFyMonthly", "fyMonthly", "fyCompareRows", "rowDateStr", "fyKey"], ["FY_MONTHS"]);
+  const { custFyMonthly, fyCompareRows } = load(["custFyMonthly", ...MONTHLY, "fyCompareRows"], ["FY_MONTHS"]);
   const acc = custFyMonthly(ROWS, new Set(["SHAM"]));
   const T = fyCompareRows(acc, ["FY26-27"], { "FY26-27": new Set([4]) }, "rev");
   assert.equal(T.rows[0].delta, null);
@@ -151,7 +154,7 @@ const SC_ROWS = [
 ];
 
 test("fyMonthly keeps only the rows asked for", () => {
-  const { fyMonthly } = load(["fyMonthly", "rowDateStr", "fyKey"]);
+  const { fyMonthly } = load([...MONTHLY]);
   const acc = fyMonthly(SC_ROWS, r => r.sc === "SGONC");
   assert.deepEqual({ ...acc["FY25-26"][5] }, { q: 4, rev: 4000 });
   assert.deepEqual({ ...acc["FY26-27"][5] }, { q: 10, rev: 9500 });
@@ -186,4 +189,25 @@ test("fyMonthKey turns an FY month back into a calendar month", () => {
   assert.equal(fyMonthKey("FY25-26", 1), "2026-01");
   assert.equal(fyMonthKey("FY26-27", 4), "2026-04");
   assert.equal(fyMonthKey("FY26-27", 3), "2027-03");
+});
+
+test("Same days to date cuts every FY at the latest bill's day", () => {
+  // Latest bill 11 Nov 2026 → each year counts 1 Apr – 11 Nov only.
+  const D = { raw: [{ dt: "2026-11-11" }] };
+  const ctx = load([...MONTHLY], ["FY_MONTHS"], { D, _cmpCov: null, CMP: { on: true, mode: "sameday" } });
+  const rows = [
+    { dt: "2025-11-11", q: 1, p: 1 },   // same day last year — in
+    { dt: "2025-11-12", q: 5, p: 1 },   // a day past — out
+    { dt: "2026-02-01", q: 7, p: 1 },   // Feb of FY25-26 — out
+    { dt: "2025-04-01", q: 2, p: 1 },   // first day of the FY — in
+    { dt: "2026-11-11", q: 3, p: 1 },
+  ];
+  const acc = ctx.fyMonthly(rows, () => true);
+  assert.equal(acc["FY25-26"][11].q, 1);
+  assert.equal(acc["FY25-26"][4].q, 2);
+  assert.equal(acc["FY25-26"][2], undefined);
+  assert.equal(acc["FY26-27"][11].q, 3);
+  // Compare off → nothing is cut
+  ctx.CMP.on = false;
+  assert.equal(ctx.fyMonthly(rows, () => true)["FY25-26"][11].q, 6);
 });
