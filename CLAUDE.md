@@ -332,6 +332,10 @@ a date inside its FY; `cmpScopeLabel()` gives the "1 Apr – 11 Nov" text. The
 month-on-month panels follow it too (`fyMonthly()` drops days past the cut-off
 via `cmpCutPos()`, the table shows only Apr → the cut-off month, last month
 marked "1–11") — only while Compare is on. No full-year projection — not asked for.
+Under the Total row, a **curved arrow** runs from each year's total to the next
+with the % change beneath it (`.fyarr`, owner's sketch 12 Nov 2026). An
+unfinished newest year is set against the previous year's *same months*
+(labelled "same months"), never its full-year total.
 
 **Reorder Radar** — flags customers overdue against **their own** rhythm (median
 gap between distinct order dates vs days silent). `reorderRadarRows()`,

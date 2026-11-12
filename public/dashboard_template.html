@@ -816,6 +816,14 @@ body.cmp-on .cmp-na{display:block;}
 .cmp-kpi-row .cmp-v{font-family:'Syne',sans-serif;font-weight:800;font-size:15px;flex:1;}
 .cmp-d{font-size:10.5px;font-weight:700;white-space:nowrap;min-width:52px;text-align:right;}
 .cmp-d.up{color:#2a8a72;}.cmp-d.down{color:#c0392b;}.cmp-d.flat{color:var(--text3);font-weight:400;}
+/* Month-on-month: curved arrow from one year's total to the next, % change under it.
+   The arc spans from the previous column's number to this one's (cells are right-aligned). */
+.fyarr{position:relative;height:56px;}
+.fyarr .u{position:absolute;top:0;right:22px;width:100%;height:18px;border:1.5px solid var(--text3);border-top:0;border-radius:0 0 50% 50% / 0 0 100% 100%;}
+.fyarr .u::after{content:'';position:absolute;right:-5.5px;top:-3px;border:4.5px solid transparent;border-bottom:7px solid var(--text3);border-top:0;}
+.fyarr .pct{position:absolute;top:22px;right:calc(22px + 50%);transform:translateX(50%);text-align:center;line-height:1.2;}
+.fyarr .pct .cmp-d{min-width:0;}
+.fyarr .pct small{display:block;font-size:8.5px;color:var(--text3);font-weight:400;white-space:nowrap;}
 .cmp-mini{display:flex;align-items:center;gap:6px;margin-top:3px;}
 .cmp-mini-y{font-family:'IBM Plex Mono',monospace;font-size:9.5px;font-weight:700;min-width:22px;}
 .cmp-mini .bar-track{flex:1;}
@@ -3291,7 +3299,18 @@ function renderFyMonths(id, acc, opt) {
       <td style="${td};text-align:left">Total</td>
       ${T.totals.map(v => `<td style="${td}">${show(v)}</td>`).join('')}
       ${n > 1 ? `<td style="${td}">${newestPartial ? '' : pctPill(totDelta)}</td>` : ''}
-    </tr>`;
+    </tr>${n > 1 ? `<tr>
+      <td></td>
+      ${T.totals.map((v, i) => {
+        if (!i) return '<td></td>';
+        // An unfinished newest year is set against the same months of the year before, never a full year.
+        const ytd = i === n-1 && newestPartial;
+        const prev = ytd ? T.sameMonthsPrev : T.totals[i-1];
+        const d = prev > 0 ? (v - prev) / prev : null;
+        return `<td style="padding:0 10px"><div class="fyarr"><i class="u"></i><span class="pct">${pctPill(d)}${ytd ? `<small>same months</small>` : ''}</span></div></td>`;
+      }).join('')}
+      <td></td>
+    </tr>` : ''}`;
   const ytdLine = `${n > 1 && newestPartial && have.length ? `<div style="padding:8px 0 0;font-size:11px;color:var(--text2)">
       Same months only (${monthsLabel(have)}): ${esc(fys[n-2])} ${show(T.sameMonthsPrev)} → ${esc(newest)} ${show(T.totals[n-1])} ${pctPill(ytdDelta)}
       <span style="color:var(--text3)">· ${esc(newest)} isn't over yet, so its full-year total isn't compared</span></div>` : ''}`;
