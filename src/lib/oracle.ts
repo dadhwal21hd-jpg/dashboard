@@ -120,7 +120,19 @@ let aliasCache: { m: Map<string, string>; at: number } | null = null;
  *  Sheet. Never throws: with Supabase unset or unreachable the names stay as
  *  the sheet spells them (last good alias list is reused if there is one). */
 export async function foldPartyAliases(rows: SheetRow[], force = false): Promise<SheetRow[]> {
-  if (!oracleConfigured() || !rows.length) return rows;
+  if (!rows.length) return rows;
+  const fold = await partyNameFolder(force);
+  return rows.map((r) => {
+    const buyer = s(r["Buyer Name"]);
+    const to = fold(buyer);
+    return to !== buyer ? { ...r, "Buyer Name": to } : r;
+  });
+}
+
+/** name → its party_aliases canonical name (or itself). Never throws. Used for
+ *  sheet rows above and for the stock tables' "held for" customer names. */
+export async function partyNameFolder(force = false): Promise<(name: string) => string> {
+  if (!oracleConfigured()) return (n) => n;
   let m = aliasCache?.m;
   if (force || !aliasCache || Date.now() - aliasCache.at > CACHE_TTL_MS) {
     try {
@@ -130,12 +142,9 @@ export async function foldPartyAliases(rows: SheetRow[], force = false): Promise
       console.error("party_aliases read failed:", err instanceof Error ? err.message : err);
     }
   }
-  if (!m?.size) return rows;
-  return rows.map((r) => {
-    const buyer = s(r["Buyer Name"]);
-    const to = m.get(aliasKey(buyer));
-    return to && to !== buyer ? { ...r, "Buyer Name": to } : r;
-  });
+  if (!m?.size) return (n) => n;
+  const map = m;
+  return (n) => map.get(aliasKey(n)) || n;
 }
 
 // ── Row shaping ─────────────────────────────────────────────────────────────

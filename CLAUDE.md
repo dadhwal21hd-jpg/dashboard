@@ -362,6 +362,20 @@ styles; style → who returned it + concentration read. Lock-gated, names via
 wrongly as 0 in Oct 2026), KK from `kk_stock_available`. Missing = "—", never 0.
 Only styles that appear in orders are sent. Off without Supabase env; never
 breaks the page.
+- **Held for customers** (owner's ask, 16 Nov 2026): both tables have a
+  `customers` column — "FRONTIER RAAS (P) LTD (2), Ria Boutique (1)" — the
+  pieces set aside for open orders. `parseHeld()` reads it (only a trailing
+  "(digits)" is the count; names contain brackets); the route folds the names
+  through `partyNameFolder()` (party_aliases) and sends `DATA._stock_held`
+  (style → [[customer, pcs]]). Those pieces are **included** in the In Stock
+  number. `stockHeldHTML()` lists them under it; names obey the lock
+  ("another customer" when masked); in a customer drill, holds for that
+  customer read "this customer". `canonCustomer()` matches stock spellings to
+  sales spellings case/space-insensitively. On 16 Nov 2026: 183 styles, 273 pcs
+  held; 57 pcs under names with no sales match (Shiva Tex, SHAKUNTLAM LEGACY
+  CLOTHING PVT.LTD (Lajpat Nagar), Ganpati Shop, SHABAD RAJOURI, KL, Dimple
+  Fashion, Petal Creations, Shopify) — they still show by name, just never as
+  "this customer". Fix by adding aliases in Supabase, not here.
 
 **Mobile** — all in the template's "SMALL SCREENS" block; nothing applies above
 900px. ≤900px the tab strip is the sticky bar; ≤640px phone layout. Every wide

@@ -6,7 +6,7 @@ import { brotliCompress, gzip, constants as zlibConstants } from "node:zlib";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { fetchSheetRows, fetchReturnsRows } from "@/lib/sheets";
-import { foldPartyAliases } from "@/lib/oracle";
+import { foldPartyAliases, partyNameFolder } from "@/lib/oracle";
 import { process as runProcessor } from "@/lib/processor";
 import { fetchDesignMap, designsConfigured } from "@/lib/designs";
 import { getStableDesignToken } from "@/lib/signing";
@@ -62,15 +62,21 @@ export async function GET(req: NextRequest) {
     // Their classification rules stay in classifyBrand(); delete this to bring them back.
     const data = runProcessor(rows, returnRows, { dropBrands: ["labotanica", "unstitched"] });
 
-    const [designMap, stockMap] = await Promise.all([
+    const [designMap, { stock: stockMap, held: heldMap }, foldName] = await Promise.all([
       fetchDesignMap(force),
       fetchStockMap(force),
+      partyNameFolder(),
     ]);
     const ordered = new Set(data.raw.map((r) => r.sn));
     const designStyles = Object.keys(designMap).filter((sn) => ordered.has(sn));
     const stock: Record<string, number> = {};
     for (const [sn, qty] of Object.entries(stockMap)) {
       if (ordered.has(sn)) stock[sn] = qty;
+    }
+    // Who each style's stock is held for (open orders), names spelled as in sales.
+    const held: Record<string, [string, number][]> = {};
+    for (const [sn, list] of Object.entries(heldMap)) {
+      if (ordered.has(sn)) held[sn] = list.map(([c, q]) => [foldName(c), q]);
     }
 
     const origin = req.nextUrl.origin;
@@ -88,6 +94,7 @@ export async function GET(req: NextRequest) {
       _design_base:   designsConfigured() ? `${origin}/api/design` : "",
       _design_token:  designsConfigured() ? await getStableDesignToken(session.user.email) : "",
       _stock:         stock,
+      _stock_held:    held,
     };
 
     const injected = template.replace(

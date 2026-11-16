@@ -27,6 +27,10 @@ import { unstable_cache } from "next/cache";
 
 /** style number (trimmed) → units available */
 export type StockMap = Record<string, number>;
+/** style number → [customer, pieces] the stock is held for (open orders).
+ *  Those pieces are INCLUDED in the style's available figure. */
+export type HeldMap = Record<string, [string, number][]>;
+export interface StockData { stock: StockMap; held: HeldMap }
 
 // PostgREST enforces its own max-rows cap (1,000 on this project — asking for
 // more silently returns 1,000). Paging therefore advances by the number of rows
@@ -43,11 +47,23 @@ export function stockConfigured(): boolean {
 interface StockRow {
   style: string | number | null;
   available: number | string | null;
+  customers: string | null;
+}
+
+/** "FRONTIER RAAS (P) LTD (2), Ria Boutique (1)" → [["FRONTIER RAAS (P) LTD", 2], ["Ria Boutique", 1]].
+ *  Names can contain brackets themselves, so only a trailing "(digits)" is the count. */
+export function parseHeld(text: string | null): [string, number][] {
+  const out: [string, number][] = [];
+  for (const m of String(text ?? "").matchAll(/\s*(.+?)\s*\((\d+)\)\s*(?:,|$)/g)) {
+    const q = Number(m[2]);
+    if (m[1] && q > 0) out.push([m[1], q]);
+  }
+  return out;
 }
 
 /** All rows of one table (optionally narrowed by a PostgREST filter), summed
  *  into `out`. Throws on failure — the caller catches. */
-async function readTable(table: string, filter: string, out: StockMap): Promise<void> {
+async function readTable(table: string, filter: string, out: StockMap, held: HeldMap): Promise<void> {
   const base = (process.env.PROJECT_URL || "").replace(/\/+$/, "");
   const key = process.env.ANON_KEY || "";
 
@@ -56,7 +72,7 @@ async function readTable(table: string, filter: string, out: StockMap): Promise<
     // `order=style` is load-bearing: limit/offset paging over an UNORDERED
     // query is undefined in Postgres — a row can appear in two pages
     // (double-counted) or in none (silently missing).
-    const url = `${base}/rest/v1/${table}?select=style,available${filter}&order=style&limit=${PAGE}&offset=${offset}`;
+    const url = `${base}/rest/v1/${table}?select=style,available,customers${filter}&order=style&limit=${PAGE}&offset=${offset}`;
     const res = await fetch(url, {
       headers: { apikey: key, Authorization: `Bearer ${key}`, Prefer: "count=exact" },
       cache: "no-store",
@@ -81,18 +97,21 @@ async function readTable(table: string, filter: string, out: StockMap): Promise<
       // One row per style in practice; sum anyway rather than let a future
       // duplicate silently drop units.
       out[sn] = (out[sn] ?? 0) + qty;
+      const h = parseHeld(r.customers);
+      if (h.length) (held[sn] ??= []).push(...h);
     }
   }
 }
 
 /** Throws on failure — the caller catches. Never cache a transient error. */
-async function computeStockMap(): Promise<StockMap> {
+async function computeStockMap(): Promise<StockData> {
   const rstudio: StockMap = {};
   const kk: StockMap = {};
+  const heldAll: HeldMap = {};
   // Independent reads of two tables — run together, not back to back.
   await Promise.all([
-    readTable("stock_available", "&brand=eq.R_STUDIO", rstudio),
-    readTable("kk_stock_available", "&brand=eq.KK", kk),
+    readTable("stock_available", "&brand=eq.R_STUDIO", rstudio, heldAll),
+    readTable("kk_stock_available", "&brand=eq.KK", kk, heldAll),
   ]);
   // Each table only accepts its own brand (filters above), so they should never
   // share a style. If one ever does, we can't know which count is right — so
@@ -112,21 +131,24 @@ async function computeStockMap(): Promise<StockMap> {
       `Stock: ${clash.length} style(s) in BOTH R-Studio and KK tables, left blank: ${clash.slice(0, 20).join(", ")}`,
     );
   }
-  return out;
+  const held: HeldMap = {};
+  for (const sn of Object.keys(out)) if (heldAll[sn]) held[sn] = heldAll[sn];
+  return { stock: out, held };
 }
 
-const cachedStockMap = unstable_cache(computeStockMap, ["stock-map-v2"], {
+const cachedStockMap = unstable_cache(computeStockMap, ["stock-map-v3"], {
   revalidate: REVALIDATE_SECONDS,
   tags: [CACHE_TAG],
 });
 
-/** Style → units available. Returns {} when unconfigured or unreadable. */
-export async function fetchStockMap(force = false): Promise<StockMap> {
-  if (!stockConfigured()) return {};
+/** Style → units available, plus who those units are held for. Empty when
+ *  unconfigured or unreadable. */
+export async function fetchStockMap(force = false): Promise<StockData> {
+  if (!stockConfigured()) return { stock: {}, held: {} };
   try {
     return force ? await computeStockMap() : await cachedStockMap();
   } catch (err) {
     console.error("Stock fetch failed:", err instanceof Error ? err.message : err);
-    return {};
+    return { stock: {}, held: {} };
   }
 }

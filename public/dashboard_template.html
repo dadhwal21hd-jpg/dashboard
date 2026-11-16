@@ -816,6 +816,12 @@ body.cmp-on .cmp-na{display:block;}
 .cmp-kpi-row .cmp-v{font-family:'Syne',sans-serif;font-weight:800;font-size:15px;flex:1;}
 .cmp-d{font-size:10.5px;font-weight:700;white-space:nowrap;min-width:52px;text-align:right;}
 .cmp-d.up{color:#2a8a72;}.cmp-d.down{color:#c0392b;}.cmp-d.flat{color:var(--text3);font-weight:400;}
+/* In Stock cell: customers the pieces are held for (open orders) */
+.held{margin-top:3px;font-family:inherit;font-size:10px;line-height:1.35;color:#a0661f;text-align:right;}
+.held-h{font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:#a0661f;}
+.held-line{display:flex;justify-content:flex-end;gap:6px;white-space:nowrap;}
+.held-line span{max-width:150px;overflow:hidden;text-overflow:ellipsis;color:var(--text2);}
+.held-line.mine span{color:var(--accent);font-weight:700;}
 /* Month-on-month: curved arrow from one year's total to the next, % change under it.
    The arc spans from the previous column's number to this one's (cells are right-aligned). */
 .fyarr{position:relative;height:56px;}
@@ -1675,11 +1681,40 @@ function stockOf(sn) {
 
 /** Units-available cell for a style. Green when there's stock, grey zero when
  *  the table says none left, "—" when the style has no stock row at all. */
-function stockCell(sn) {
+function stockCell(sn, forMembers) {
   const v = stockOf(sn);
   if (v === null) return `<span style="color:var(--text3);font-family:'IBM Plex Mono',monospace;font-size:11px" title="No stock record for this style (no row in the R-Studio or KK stock tables)">—</span>`;
   const col = v > 0 ? '#2a8a72' : '#b0aaa2';
-  return `<span style="color:${col};font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:${v>0?700:400}" title="Units available to sell right now">${fN(v)}</span>`;
+  return `<span style="color:${col};font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:${v>0?700:400}" title="Units available to sell right now">${fN(v)}</span>${stockHeldHTML(sn, forMembers)}`;
+}
+
+/** Stock-table customer names → the spelling used in sales (case/space differences only;
+ *  the server already applied party_aliases). Built once per data load. */
+let _custCanon = null;
+function canonCustomer(name) {
+  if (!_custCanon || _custCanon.d !== D) {
+    const m = new Map();
+    for (const r of D.raw) if (r.c) { const k = r.c.trim().replace(/\s+/g, ' ').toLowerCase(); if (!m.has(k)) m.set(k, r.c); }
+    _custCanon = { d:D, m };
+  }
+  return _custCanon.m.get(String(name).trim().replace(/\s+/g, ' ').toLowerCase()) || name;
+}
+
+/** Under the In Stock number: who those pieces are held for (open orders, from
+ *  the stock tables' `customers` column). They are INCLUDED in the number.
+ *  Names obey the lock; in a customer drill, pieces held for that customer are marked. */
+function stockHeldHTML(sn, forMembers) {
+  const list = (D._stock_held || {})[sn];
+  if (!list || !list.length) return '';
+  const tot = list.reduce((t, [, q]) => t + q, 0);
+  const lines = list.map(([raw, q]) => {
+    const c = canonCustomer(raw);
+    const mine = forMembers && forMembers.has(c);
+    const show = LOCK_MODE === 'unlocked' || (LOCK_MODE === 'customer' && c === UNLOCKED_CUSTOMER);
+    const who = mine ? 'this customer' : show ? esc(c) : 'another customer';
+    return `<div class="held-line${mine ? ' mine' : ''}"><span>${who}</span><b>${fN(q)}</b></div>`;
+  }).join('');
+  return `<div class="held" title="Pieces set aside for open orders — already included in the in-stock number"><div class="held-h">${fN(tot)} held for</div>${lines}</div>`;
 }
 
 /** True when any control in the global filter bar would narrow the data —
@@ -3133,7 +3168,7 @@ function redrawStyleTable() {
       <td style="padding:7px 10px;text-align:center">${freqBadge(s.freq||1)}</td>
       <td style="padding:7px 10px;text-align:right">${retCell(retd[s.n]||0, gross[s.n]||0)}</td>
       <td style="padding:7px 10px;text-align:right">${globalBadge}</td>
-      <td style="padding:7px 10px;text-align:right">${stockCell(s.n)}</td>
+      <td style="padding:7px 10px;text-align:right">${stockCell(s.n, members)}</td>
       <td style="padding:7px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--text2)">${s.rev>0?fmt(s.rev):'—'}</td>
       <td style="padding:7px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text3)">${s.price?'₹'+fN(s.price):'—'}</td>
     </tr>`;
